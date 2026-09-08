@@ -1,0 +1,29 @@
+# Exclude version-control, dependency, cache, and build artifacts from the
+# Docker build context. Keeps builds fast and prevents secrets leaking in.
+.git
+.gitignore
+docker-compose.yml
+.dockerignore
+
+# Dependencies
+**/node_modules
+**/.venv
+
+# Python
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+
+# Node / Next
+**/.next
+**/out
+
+# Secrets — never send env files into build context
+**/.env
+**/.env.local
+**/.env.*.local
+
+# OS / editor
+.DS_Store
+.vscode/.idea

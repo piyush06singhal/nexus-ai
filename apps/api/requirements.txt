@@ -1,0 +1,13 @@
+# NEXUS Backend — runtime dependencies
+# NOTE: Using >= constraints because Python 3.14 is bleeding-edge and only
+# the newest package versions ship cp314 wheels. See docs/architecture.md
+# for the dependency-pinning discussion.
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.13
+pydantic-settings>=2.7
+sqlalchemy>=2.0.42
+alembic>=1.14
+psycopg[binary]>=3.3.4
+redis>=5.2
+httpx>=0.28

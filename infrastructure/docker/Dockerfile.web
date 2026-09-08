@@ -1,0 +1,26 @@
+# NEXUS Frontend runtime image (Next.js).
+# Multi-stage: install deps, build, then run `next start`.
+
+# ---- deps: install node_modules from lockfile ----
+FROM node:24-alpine AS deps
+WORKDIR /app/apps/web
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci
+
+# ---- builder: compile the Next.js app ----
+FROM node:24-alpine AS builder
+WORKDIR /app/apps/web
+COPY --from=deps /app/apps/web/node_modules ./node_modules
+COPY apps/web/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# ---- runner: serve the compiled app ----
+FROM node:24-alpine AS runner
+WORKDIR /app/apps/web
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=builder /app/apps/web/ ./
+
+EXPOSE 3000
+CMD ["npm", "run", "start"]

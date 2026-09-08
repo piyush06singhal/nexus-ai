@@ -1,0 +1,25 @@
+# NEXUS API runtime image.
+# Runs the FastAPI application with uvicorn under a non-root user.
+FROM python:3.14-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install runtime dependencies first (cache-friendly layer).
+COPY apps/api/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy application source and Alembic migrations.
+COPY apps/api/app ./app
+COPY apps/api/alembic ./alembic
+COPY apps/api/alembic.ini ./alembic.ini
+
+# Run as a non-root user (security: least privilege by default).
+RUN useradd --create-home nexus && chown -R nexus:nexus /app
+USER nexus
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
