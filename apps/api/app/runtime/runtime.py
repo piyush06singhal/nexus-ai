@@ -55,6 +55,7 @@ def _json_object(raw: str | None) -> dict[str, Any]:
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
+
 # Fallback pricing used to estimate cost when a provider doesn't supply it.
 DEFAULT_PRICE_PER_1K = {"prompt": 0.0, "completion": 0.0}
 PROVIDER_PRICES: dict[str, dict[str, float]] = {

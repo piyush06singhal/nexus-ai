@@ -147,8 +147,7 @@ def _format_tool_definitions(definitions: list[dict]) -> str:
         if params_str:
             lines.append(f"  Parameters: {params_str}")
     lines.append(
-        "\nTo use a tool, respond with: "
-        '{"tool_calls": [{"tool": "<name>", "arguments": {<args>}}]}'
+        '\nTo use a tool, respond with: {"tool_calls": [{"tool": "<name>", "arguments": {<args>}}]}'
     )
     lines.append(
         "When finished, respond with: "

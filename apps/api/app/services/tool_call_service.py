@@ -49,10 +49,7 @@ class ToolCallService:
 
     def count_by_execution(self, execution_id: UUID) -> int:
         """Return the number of tool calls for an execution."""
-        stmt = (
-            select(ToolCallRecord)
-            .where(ToolCallRecord.execution_id == execution_id)
-        )
+        stmt = select(ToolCallRecord).where(ToolCallRecord.execution_id == execution_id)
         return len(list(self._db.scalars(stmt).all()))
 
 

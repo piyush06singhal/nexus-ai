@@ -54,8 +54,7 @@ class DateTimeTool(BaseTool):
                     name="fmt",
                     type=ToolParameterType.STRING,
                     description=(
-                        "strftime format string (for format action). "
-                        "Default: '%Y-%m-%d %H:%M:%S'."
+                        "strftime format string (for format action). Default: '%Y-%m-%d %H:%M:%S'."
                     ),
                     required=False,
                     default="%Y-%m-%d %H:%M:%S",

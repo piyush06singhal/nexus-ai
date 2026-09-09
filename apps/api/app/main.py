@@ -24,13 +24,36 @@ logger = get_logger(__name__)
 async def lifespan(_app: FastAPI):
     """Startup/shutdown lifecycle.
 
-    Currently only configures logging. Database/Redis connections are created
-    lazily on first use, so the app boots even if dependencies are down —
-    the health endpoint reports their actual state.
+    Configures logging and, when enabled, starts the workflow worker and
+    scheduler daemon threads.
     """
     setup_logging()
     logger.info("NEXUS API starting", extra={"env": settings.environment})
+
+    worker = None
+    scheduler = None
+    if settings.workflow_worker_enabled:
+        from app.db.session import SessionLocal
+        from app.workflow.scheduler import WorkflowScheduler
+        from app.workflow.worker import WorkflowWorker
+
+        worker = WorkflowWorker(
+            SessionLocal,
+            poll_interval=settings.workflow_worker_poll_interval,
+        )
+        scheduler = WorkflowScheduler(
+            SessionLocal,
+            poll_interval=settings.workflow_scheduler_poll_interval,
+        )
+        worker.start()
+        scheduler.start()
+
     yield
+
+    if worker is not None:
+        worker.stop()
+    if scheduler is not None:
+        scheduler.stop()
     logger.info("NEXUS API shutting down")
 
 

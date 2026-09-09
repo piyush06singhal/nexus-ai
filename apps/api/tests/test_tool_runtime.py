@@ -57,9 +57,7 @@ def _seed_agent_and_task(db):
             model_name="mock-model",
         )
     )
-    task = TaskService(db).create(
-        TaskCreate(title="Do math", input_data={"x": 10})
-    )
+    task = TaskService(db).create(TaskCreate(title="Do math", input_data={"x": 10}))
     TaskService(db).assign(task.id, agent.id)
     return agent, task
 
@@ -107,9 +105,7 @@ class TestToolCallingLoop:
         assert execution.total_tokens == 45  # 15 + 30
 
         # Verify tool calls were persisted.
-        tool_calls = db.query(ToolCallORM).filter(
-            ToolCallORM.execution_id == execution.id
-        ).all()
+        tool_calls = db.query(ToolCallORM).filter(ToolCallORM.execution_id == execution.id).all()
         assert len(tool_calls) == 1
         assert tool_calls[0].tool_name == "calculator"
         assert tool_calls[0].result_status.value == "success"
@@ -118,9 +114,7 @@ class TestToolCallingLoop:
         """If a tool call fails, the runtime feeds the error back and continues."""
         agent, task = _seed_agent_and_task(db)
         # First call: tool request for unknown tool.
-        bad_tool_call = json.dumps(
-            {"tool_calls": [{"tool": "no_such_tool", "arguments": {}}]}
-        )
+        bad_tool_call = json.dumps({"tool_calls": [{"tool": "no_such_tool", "arguments": {}}]})
         provider = MockProvider(reply=bad_tool_call)
         call_count = 0
         original_generate = provider.generate
@@ -145,9 +139,7 @@ class TestToolCallingLoop:
         execution = runtime.execute_task(task.id)
         assert execution.status == ExecutionStatus.SUCCEEDED
         # The tool call should have a "error" status.
-        tool_calls = db.query(ToolCallORM).filter(
-            ToolCallORM.execution_id == execution.id
-        ).all()
+        tool_calls = db.query(ToolCallORM).filter(ToolCallORM.execution_id == execution.id).all()
         assert len(tool_calls) == 1
         assert tool_calls[0].result_status.value == "error"
 
@@ -210,9 +202,7 @@ class TestToolCallingLoop:
         execution = runtime.execute_task(task.id)
         assert execution.status == ExecutionStatus.SUCCEEDED
 
-        tool_calls = db.query(ToolCallORM).filter(
-            ToolCallORM.execution_id == execution.id
-        ).all()
+        tool_calls = db.query(ToolCallORM).filter(ToolCallORM.execution_id == execution.id).all()
         assert len(tool_calls) == 2
         tool_names = {tc.tool_name for tc in tool_calls}
         assert tool_names == {"calculator", "datetime"}
@@ -256,9 +246,7 @@ class TestToolCallingLoop:
 
         assert execution.status == ExecutionStatus.SUCCEEDED
         # The runtime executed the requested tool and persisted it.
-        tool_calls = db.query(ToolCallORM).filter(
-            ToolCallORM.execution_id == execution.id
-        ).all()
+        tool_calls = db.query(ToolCallORM).filter(ToolCallORM.execution_id == execution.id).all()
         assert len(tool_calls) == 1
         assert tool_calls[0].tool_name == "calculator"
         assert tool_calls[0].result_status.value == "success"

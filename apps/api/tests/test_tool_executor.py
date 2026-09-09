@@ -15,9 +15,7 @@ class TestPermissions:
     def _make_tool_def(self, *, dangerous=False, name="test_tool"):
         from app.tools.types import ToolDefinition
 
-        return ToolDefinition(
-            name=name, description="test", dangerous=dangerous
-        )
+        return ToolDefinition(name=name, description="test", dangerous=dangerous)
 
     def test_non_dangerous_always_allowed(self):
         ctx = PermissionContext(agent_id=uuid4())
@@ -28,15 +26,11 @@ class TestPermissions:
         assert check_permission(self._make_tool_def(dangerous=True), ctx) is False
 
     def test_dangerous_allowed_when_in_allowlist(self):
-        ctx = PermissionContext(
-            agent_id=uuid4(), allowed_tools={"test_tool"}
-        )
+        ctx = PermissionContext(agent_id=uuid4(), allowed_tools={"test_tool"})
         assert check_permission(self._make_tool_def(dangerous=True), ctx) is True
 
     def test_explicit_deny_overrides(self):
-        ctx = PermissionContext(
-            agent_id=uuid4(), denied_tools={"test_tool"}
-        )
+        ctx = PermissionContext(agent_id=uuid4(), denied_tools={"test_tool"})
         assert check_permission(self._make_tool_def(), ctx) is False
 
     def test_admin_bypass(self):
@@ -44,9 +38,7 @@ class TestPermissions:
         assert check_permission(self._make_tool_def(dangerous=True), ctx) is True
 
     def test_allowlist_restricts_non_dangerous(self):
-        ctx = PermissionContext(
-            agent_id=uuid4(), allowed_tools={"other_tool"}
-        )
+        ctx = PermissionContext(agent_id=uuid4(), allowed_tools={"other_tool"})
         assert check_permission(self._make_tool_def(), ctx) is False
 
 

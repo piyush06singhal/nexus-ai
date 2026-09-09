@@ -1,6 +1,6 @@
 # NEXUS — System Architecture
 
-> **Phase 2 (Tool & Action System).** This document describes the current architecture (Foundation + Agent Runtime + Tool System) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
+> **Phase 3 (Workflow Orchestration).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
 
 ---
 
@@ -34,7 +34,7 @@ The engineering goal for the whole project is captured in a few principles:
                          │  FastAPI · Pydantic ·        │
                          │  /api/v1                       │
                          │  agents · tasks · executions │
-                         │  tools · tool_calls          │
+                         │  tools · workflows          │
                          └───┬───────────────┬─────────┘
                              │               │
                  ┌───────────▼───┐   ┌───────▼────────┐
@@ -43,7 +43,8 @@ The engineering goal for the whole project is captured in a few principles:
                  │  tasks         │   │   & queues)    │
                  │  agent_executions │               │
                  │  tool_calls      │               │
-                 │  agent_tool_permissions            │
+                 │  workflows/steps/triggers         │
+                 │  workflow_executions/step_exections│
                  └───────────┬───┘   └────────────────┘
                              │
                  ┌───────────▼───────────────────────┐
@@ -55,12 +56,21 @@ The engineering goal for the whole project is captured in a few principles:
                  │      authorize → run → persist)   │
                  │    → append results → repeat      │
                  │  → parse → persist AgentExecution │
+                 └───────────┬───────────────────────┘
+                             │
+                 ┌───────────▼───────────────────────┐
+                 │  Workflow Orchestration (app/workflow)│
+                 │  engine: topo-sort steps → run →  │
+                 │    persist step trace             │
+                 │  worker: claims queued executions │
+                 │  scheduler: fires due triggers    │
                  └────────────────────────────────────┘
 
         AI providers resolve through the ModelProvider abstraction + registry
         (mock, openai stub). Tools register in the tool registry and execute
-        through the permission-gated ToolExecutor. Memory and orchestration
-        build on this in later phases.
+        through the permission-gated ToolExecutor. Workflows orchestrate agents
+        and tools into dependency-ordered pipelines, driven by the in-process
+        worker + scheduler over the DB-as-queue.
 ```
 
 ---
@@ -83,7 +93,7 @@ FastAPI application with:
 
 - **Entry point** (`app/main.py`) — app factory, lifespan hook, CORS, router mounting, exception handlers.
 - **Configuration** (`app/core/config.py`) — pydantic-settings `Settings` singleton driven by environment variables and `.env`.
-- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Models live in `app/db/models/`: `Agent`, `Task`, `AgentExecution`, `ToolCallRecord`, `AgentToolPermission`.
+- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Models live in `app/db/models/`: `Agent`, `Task`, `AgentExecution`, `ToolCallRecord`, `AgentToolPermission`, and the Phase 3 workflow set (`Workflow`, `WorkflowStep`, `WorkflowTrigger`, `WorkflowExecution`, `StepExecution`).
 - **Schemas** (`app/schemas/`) — Pydantic request/response contracts decoupled from the ORM, plus the `AgentResult` structured-output contract and tool/tool-call read schemas.
 - **Services** (`app/services/`) — thin persistence CRUD (`AgentService`, `TaskService`, `ExecutionService`, `ToolCallService`, `PermissionService`) and a runtime-assembly dependency (`create_runtime`) that wires the runtime to a request-scoped session.
 - **Tools** (`app/tools/`) — the Tool & Action system: types, registry, permission context, and executor, plus built-in tools (see §3.5).
@@ -145,7 +155,22 @@ The Phase 2 capability boundary between agent **reasoning** and tool **side effe
 - **`builtin/`** — `calculator` (safe expression evaluator), `datetime` (now/format/diff), `text_utils` (case/count/trim/replace/reverse/words), `json_utils` (parse/validate/pretty/minify/query/keys).
 - **Persistence** — `tool_calls` (execution id, tool name, arguments JSON, result status/data/error, execution time, iteration) and `agent_tool_permissions` (per-agent granted/denied). Permissions are loaded per-execution by `PermissionService.get_context()`.
 
-### 3.6 Infrastructure & Database
+### 3.6 Workflow Orchestration (`app/workflow/`)
+
+The Phase 3 coordination layer that composes agents and tools into durable, dependency-ordered pipelines.
+
+- **`engine.py`** — `WorkflowEngine`: loads a `WorkflowExecution` + its steps, topologically sorts them by dependencies, and runs each step in order, resolving input mappings from a shared execution-state document and persisting a per-step trace (`StepExecution`). `_run_step` dispatches by step type: `agent_task` → `AgentRuntime`, `tool_action` → `ToolExecutor`, `condition` → the safe condition evaluator, `delay` → a cancellable sleep. A failed condition marks the step (and its dependents) `skipped`. Denied/unresolvable tool steps fail the workflow. Retries honor `retry_policy` + `idempotency`; per-step `timeout_seconds` marks an over-long step `timed_out`.
+- **`conditions.py`** — a **safe** condition interpreter (ops `eq/ne/gt/gte/lt/lte/contains/not_contains`, nested `and`/`or`) over JSON paths — no `eval()`, no arbitrary code.
+- **`mapping.py`** / **`state.py`** — `resolve_mapping(mapping, state)` pulls step inputs from `{"input": …, "steps": {name: {output, status}}}`; `WorkflowState` wraps the same document for path reads and step-output writes.
+- **`validator.py`** — `validate_workflow_steps()` checks unique names, dependency existence, cycle-freedom (DFS), valid agent/tool refs, valid configs, timeout > 0, and retry-policy safety (no auto-retry on `non_idempotent`/`side_effecting`).
+- **`queue.py`** / **`worker.py`** — the **DB-as-queue**: `workflow_executions` rows in `queued` state are claimed atomically by `WorkflowWorker` (`FOR UPDATE SKIP LOCKED` on Postgres, `SELECT + UPDATE` on SQLite), marked `running`, and run via the engine. `recover_stale()` marks executions stuck `running` past the timeout as `timed_out`, so a restart never leaves ghost work.
+- **`scheduler.py`** — `WorkflowScheduler` polls enabled triggers on `active` workflows whose `next_run_at` has arrived, creates a `queued` execution per firing, and advances `next_run_at` (cron via `croniter`, or fixed interval).
+- **`app/services/workflow_service.py`** — `WorkflowService`: workflow CRUD + lifecycle (validate→activate→pause), step/trigger management, execution creation/listing/cancel, and the step-trace read — with `to_dict`/`step_to_dict`/`trigger_to_dict`/`execution_to_dict`/`step_execution_to_dict` serializers.
+- **Endpoints** (`app/api/v1/endpoints/workflows.py`) — full workflow API under `/api/v1/workflows`: CRUD, activate/pause, validate, steps, triggers, execute, and executions (with per-execution step traces and cancel). Manual execute runs inline when `workflow_execute_sync` is set (test suite) and otherwise enqueues for the worker.
+
+The worker and scheduler are **in-process daemon threads** started in the FastAPI lifespan when `workflow_worker_enabled` is true — durable, restart-safe orchestration with zero extra runtime infrastructure (no Redis).
+
+### 3.7 Infrastructure & Database
 
 - **Docker Compose** (root) — `postgres`, `redis`, `api`, `web` services with healthchecks and dependency ordering.
 - **PostgreSQL 16** — primary store, accessed via SQLAlchemy; migrations via Alembic.
@@ -192,15 +217,20 @@ The Phase 2 capability boundary between agent **reasoning** and tool **side effe
 
 ---
 
-## 6. Data Model (Phase 2)
+## 6. Data Model (Phase 3)
 
-Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runtime tables; Phase 2 adds the tool tables:
+Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runtime tables; Phase 2 added the tool tables; Phase 3 adds the workflow tables:
 
 - **`agents`** — id, name (unique), role, description, `status` (draft/active/inactive), `system_prompt`, and model config (`provider`, `model_name`, `temperature`, `max_tokens`, `model_params` JSON). Only `active` agents execute tasks.
 - **`tasks`** — id, title, description, `input_data` (JSON payload for the agent), `status` (pending/queued/in_progress/completed/failed/cancelled), `assigned_agent_id` FK → agents, and timestamps including `executed_at`.
 - **`agent_executions`** — id, `task_id` + `agent_id`, `status` (running/succeeded/failed/cancelled), `input_data`/`output_data`/`error`, the resolved `provider` + `model_name`, token usage (`prompt/completion/total`), `estimated_cost`, `latency_ms`, and timestamps. This is the auditable record of "what actually happened."
 - **`tool_calls`** — id, `execution_id` (indexed FK → agent_executions), `tool_name`, `arguments` JSON, `result_status` (success/error/timeout/denied), `result_data`/`result_error` JSON, `execution_time_ms`, `iteration`, `created_at`. One row per tool invocation within an execution, so the runtime's tool activity is fully traceable.
 - **`agent_tool_permissions`** — id, `agent_id` (indexed), `tool_name`, `granted` boolean (default `true`), `created_at`. An empty set allows all non-dangerous tools; populated rows restrict/deny; a `granted=false` row hard-denies a tool.
+- **`workflows`** — id, `name` (unique), `description`, `status` (draft/active/paused/archived), `version`, `configuration` JSON, and timestamps. The durable definition of a pipeline.
+- **`workflow_steps`** — id, `workflow_id` FK → workflows, `name` (unique within a workflow), `step_type` (agent_task/tool_action/condition/delay), `configuration` JSON (agent_id + input mapping, tool_name + arguments, condition, or duration), `order`, `dependencies` JSON (list of step names), `timeout_seconds`, `retry_policy` JSON, `idempotency` tag. Indexed on `(workflow_id, name)`.
+- **`workflow_triggers`** — id, `workflow_id` FK, `trigger_type` (schedule/event/webhook), `configuration` JSON (`cron`/`interval`/`event_name`/`webhook_secret`), `enabled` boolean, `next_run_at`. Indexed on `(next_run_at, enabled)` for the scheduler poll.
+- **`workflow_executions`** — id, `workflow_id` FK, `status` (queued/running/completed/failed/cancelled/timed_out), `trigger_type`, `input_data`/`output_data`/`error` JSON, `started_at`, `completed_at`, `duration_ms`. Indexed on `status` for the worker claim query — the **DB queue**.
+- **`step_executions`** — id, `workflow_execution_id` FK, `workflow_step_id` FK, `status` (pending/ready/running/completed/failed/skipped/cancelled/timed_out), `input_data`/`output_data`/`error` JSON, `attempt_number`, `started_at`, `completed_at`, `duration_ms`. One row per step per execution — the auditable step trace.
 
 Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
 
@@ -216,9 +246,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.1 Automation & Workflow Engine
 
-- **Phase:** 4 (Multi-Agent Orchestration)
-- **Design accommodation:** A task queue interface (`app/tasks/`) with a worker process abstraction. The current `SessionLocal` and Redis client establish the pattern for DB-backed queues and pub/sub event dispatch.
-- **Interface points:** `TaskQueue.submit()`, `TaskQueue.claim()`, `TaskQueue.complete()` — to be implemented with Redis or Postgres advisory locks.
+- **Phase:** 3 (Workflow Orchestration) — *built*
+- **Design accommodation:** `app/workflow/` implements a durable orchestration layer: a dependency-aware `WorkflowEngine`, a safe condition evaluator, per-step retry/timeout/idempotency, triggers (schedule/event/webhook), and a **DB-as-queue** worker + scheduler that survive restarts (no Redis at runtime).
+- **Interface points:** `WorkflowEngine.execute()`, `WorkflowQueue.claim_next()`, `WorkflowWorker`/`WorkflowScheduler`, `validate_workflow_steps()`, and the `/api/v1/workflows*` endpoints. The queue is `workflow_executions` rows (status `queued` → worker claims with `FOR UPDATE SKIP LOCKED`); a Postgres-advisory-lock or Redis-backed queue can replace it later without changing callers.
 
 ### 7.2 Mission System
 
@@ -264,9 +294,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.9 Failure Recovery & Resilience
 
-- **Phase:** 4 (Multi-Agent Orchestration)
-- **Design accommodation:** Retry patterns with exponential backoff, dead-letter queues for failed tasks, and circuit breaker interfaces for external service calls.
-- **Interface points:** `RetryPolicy`, `DeadLetterQueue`, `CircuitBreaker`.
+- **Phase:** 3 (Workflow Orchestration) through 4
+- **Design accommodation:** Per-step `retry_policy` with exponential/fixed backoff is built into phases 3 workflow steps, gated by idempotency (no auto-retry on side-effecting steps). The worker's `recover_stale()` marks executions stuck `running` past the timeout as `timed_out`, and a dead-letter queue + circuit breaker for external services remain future.
+- **Interface points:** `retry_policy`/`timeout_seconds`/`idempotency` on steps, `WorkflowWorker.recover_stale()`, and future `DeadLetterQueue`/`CircuitBreaker`.
 
 ### 7.10 Permission & Security System
 
@@ -352,9 +382,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 - **Phase 1+ (Agent Runtime):** real provider adapters (OpenAI, Anthropic, Gemini, local); structured outputs.
 - **Phase 2+ (Tool & Action System):** a richer tool set (web fetch/HTTP, file/shell in a sandbox, browser automation), per-agent permission management UI + endpoint, and vendor-native tool-call schema adoption for real providers.
-- **Task engine:** a DB-backed queue and worker process, with `execution_id` observability.
+- **Phase 3+ (Workflow Orchestration):** a visual workflow editor, venue triggers/webhook guards, and richer step types (sub-workflow, parallel fan-out — the sequential engine already returns execution state in dependency order).
 - **Memory:** short-term (context/conversation) and long-term (vector/searchable) stores.
-- **Multi-agent orchestration:** mission decomposition, role assignment, coordination, retries, failover.
+- **Multi-agent orchestration:** mission decomposition, role assignment, coordination, failover (workflows already reuse a DB-backed queue + worker with per-execution observability).
 - **Approvals & RBAC:** human-in-the-loop gates for sensitive side effects.
 
 See [roadmap.md](roadmap.md) for the full phased plan.

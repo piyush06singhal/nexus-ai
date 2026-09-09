@@ -38,6 +38,9 @@ engine = create_engine(
 # Session factory — each session is short-lived and yielded via get_db().
 SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
+# Sync session factory for worker/scheduler threads (independent sessions).
+sync_session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+
 
 def get_db() -> Generator[Session, None, None]:
     """FastAPI dependency that yields a database session and closes it after.

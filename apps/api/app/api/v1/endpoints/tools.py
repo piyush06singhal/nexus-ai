@@ -37,6 +37,7 @@ def get_tool_def(tool_name: str) -> ToolRead:
 
 # --- Tool call records (nested under executions, but exposed here for convenience) ---
 
+
 @router.get(
     "/calls/{execution_id}",
     response_model=list[ToolCallRead],
@@ -52,9 +53,7 @@ def list_tool_calls_for_execution(
     try:
         eid = UUID(execution_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=422, detail="Invalid execution_id format"
-        ) from exc
+        raise HTTPException(status_code=422, detail="Invalid execution_id format") from exc
 
     service = ToolCallService(db)
     records = service.list_by_execution(eid)

@@ -124,3 +124,124 @@ export interface ToolCallRecord {
   iteration: number;
   created_at: string;
 }
+
+// --- Phase 3: Workflow Orchestration ---
+
+export type WorkflowStatus = "draft" | "active" | "paused" | "archived";
+export type WorkflowStepType = "agent_task" | "tool_action" | "condition" | "delay";
+export type WorkflowTriggerType = "schedule" | "event" | "webhook";
+export type WorkflowExecutionStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timed_out";
+export type StepExecutionStatus =
+  | "pending"
+  | "ready"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "cancelled"
+  | "timed_out";
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string | null;
+  status: WorkflowStatus;
+  version: number;
+  configuration: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  workflow_id: string;
+  name: string;
+  description: string | null;
+  step_type: WorkflowStepType;
+  configuration: Record<string, unknown> | null;
+  order: number;
+  dependencies: string[] | null;
+  timeout_seconds: number | null;
+  retry_policy: Record<string, unknown> | null;
+  idempotency: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowTrigger {
+  id: string;
+  workflow_id: string;
+  trigger_type: WorkflowTriggerType;
+  configuration: Record<string, unknown> | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowExecution {
+  id: string;
+  workflow_id: string;
+  status: WorkflowExecutionStatus;
+  trigger_type: string | null;
+  input_data: Record<string, unknown> | null;
+  output_data: Record<string, unknown> | null;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface StepExecution {
+  id: string;
+  workflow_execution_id: string;
+  workflow_step_id: string;
+  status: StepExecutionStatus;
+  input_data: Record<string, unknown> | null;
+  output_data: Record<string, unknown> | null;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  attempt_number: number;
+  created_at: string;
+}
+
+export interface WorkflowValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+/** Payload for creating a workflow. */
+export interface WorkflowInput {
+  name: string;
+  description?: string | null;
+  configuration?: Record<string, unknown> | null;
+}
+
+/** Payload for creating a workflow step. */
+export interface WorkflowStepInput {
+  name: string;
+  step_type: WorkflowStepType;
+  description?: string | null;
+  order?: number;
+  dependencies?: string[] | null;
+  configuration?: Record<string, unknown> | null;
+  timeout_seconds?: number | null;
+  retry_policy?: Record<string, unknown> | null;
+  idempotency?: string;
+}
+
+/** Payload for creating a workflow trigger. */
+export interface WorkflowTriggerInput {
+  trigger_type: WorkflowTriggerType;
+  configuration?: Record<string, unknown> | null;
+  enabled?: boolean;
+}

@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
+    # Workflow orchestration
+    workflow_worker_enabled: bool = False
+    workflow_worker_poll_interval: float = 1.0
+    workflow_scheduler_poll_interval: float = 30.0
+    workflow_max_steps: int = 50
+    workflow_max_execution_duration_seconds: int = 3600
+    workflow_execute_sync: bool = False  # True in tests: execute runs inline
+
     # Pydantic settings behaviour
     model_config = SettingsConfigDict(
         env_file=".env",

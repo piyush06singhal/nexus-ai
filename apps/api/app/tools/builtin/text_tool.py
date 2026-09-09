@@ -25,8 +25,7 @@ class TextUtilityTool(BaseTool):
         return ToolDefinition(
             name="text_utils",
             description=(
-                "Manipulate and analyze text: case conversion, "
-                "word count, trim, replace, and more."
+                "Manipulate and analyze text: case conversion, word count, trim, replace, and more."
             ),
             parameters=[
                 ToolParameter(
@@ -46,8 +45,7 @@ class TextUtilityTool(BaseTool):
                     name="case_type",
                     type=ToolParameterType.STRING,
                     description=(
-                        "Target case for 'case' action: "
-                        "'upper', 'lower', 'title', 'sentence'."
+                        "Target case for 'case' action: 'upper', 'lower', 'title', 'sentence'."
                     ),
                     required=False,
                 ),

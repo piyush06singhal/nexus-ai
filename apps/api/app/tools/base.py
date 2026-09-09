@@ -86,7 +86,5 @@ def _coerce(value: Any, expected_type: ToolParameterType) -> Any:
                 return value
             raise ValueError(f"Expected dict, got {type(value).__name__}")
     except (ValueError, TypeError) as exc:
-        raise ValueError(
-            f"Cannot coerce {value!r} to {expected_type.value}: {exc}"
-        ) from exc
+        raise ValueError(f"Cannot coerce {value!r} to {expected_type.value}: {exc}") from exc
     return value

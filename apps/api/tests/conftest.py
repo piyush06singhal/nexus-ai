@@ -72,6 +72,7 @@ def db_engine():
     from sqlalchemy import create_engine
     from sqlalchemy.pool import StaticPool
 
+    import app.db.models  # noqa: F401 — ensures all ORM tables are registered.
     from app.db.session import Base
 
     engine = create_engine(

@@ -104,6 +104,4 @@ class CalculatorTool(BaseTool):
         try:
             return float(expr)
         except ValueError as exc:
-            raise ValueError(
-                f"Cannot parse '{expr}' as a number or recognized expression"
-            ) from exc
+            raise ValueError(f"Cannot parse '{expr}' as a number or recognized expression") from exc

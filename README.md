@@ -8,7 +8,7 @@ NEXUS lets you hand a high-level business objective to a system of AI agents tha
 2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
 3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
 
-> **Status: Phase 2 (Tool & Action System).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI to browse registered tool definitions and inspect per-execution tool calls.
+> **Status: Phase 3 (Workflow Orchestration).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow between steps, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts — all orchestrated durably with no Redis.
 
 ---
 
@@ -92,6 +92,51 @@ curl -X POST localhost:8000/api/v1/tasks/$TASK/execute
 EXEC_ID=$(curl localhost:8000/api/v1/executions | jq -r '.[0].id')
 curl localhost:8000/api/v1/tools/calls/$EXEC_ID
 ```
+
+---
+
+## Phase 3 — Workflow Orchestration
+
+Workflows compose agents and tools into **durable, dependency-ordered pipelines** with structured data flow, condition branching, retry/timeout, and triggers. Execution state is a single JSON document (`input` + per-step `output`); each step's `input_mapping` pulls values from it by path, so later steps consume earlier steps' output.
+
+**Step types**: `agent_task` (runs an agent via the runtime), `tool_action` (runs a tool via the permission-gated `ToolExecutor`), `condition` (safe branching with `eq/ne/gt/gte/lt/lte/contains/not_contains` + `and`/`or`), and `delay`. A false condition marks the step — and its dependents — `skipped` for deterministic gating. Steps carry optional `retry_policy` (gated by `idempotency`: side-effecting steps are never auto-retried) and `timeout_seconds`.
+
+**Orchestration is durable with zero extra infrastructure**: `workflow_executions` rows act as a **DB-as-queue**; an in-process `WorkflowWorker` claims them atomically and an in-process `WorkflowScheduler` fires due `schedule`/`event`/`webhook` triggers. Both auto-start with the API when `WORKFLOW_WORKER_ENABLED=true` (off in tests) and recover stale runs on restart. Workflow statuses: `draft` → `active` → `paused`.
+
+The **Workflows** page in the UI creates/edit workflows, manages steps and triggers, activates/pauses, and visualizes each execution as a step trace. A `/workflows/[id]` page shows the latest execution running through a step-by-step visualization.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Create an active mock agent to power the research step
+curl -X POST localhost:8000/api/v1/agents -H 'Content-Type: application/json' \
+  -d '{"name":"researcher","role":"researcher","status":"active","provider":"mock","model_name":"mock-model"}'
+
+# 2. Create a workflow
+WF=$(curl -X POST localhost:8000/api/v1/workflows -H 'Content-Type: application/json' \
+  -d '{"name":"Daily research digest","description":"Research, gate on volume."}' | jq -r .id)
+
+# 3. Add research → condition → notify steps (dependency-ordered)
+curl -X POST localhost:8000/api/v1/workflows/$WF/steps -H 'Content-Type: application/json' \
+  -d "{\"name\":\"research\",\"step_type\":\"agent_task\",\"configuration\":{\"agent_id\":\"<agent_id>\",\"input_mapping\":{\"topic\":\"input.topic\"}}}"
+curl -X POST localhost:8000/api/v1/workflows/$WF/steps -H 'Content-Type: application/json' \
+  -d '{"name":"gate","step_type":"condition","dependencies":["research"],\
+       "configuration":{"condition":{"field":"steps.research.output.lead_count","op":"gt","value":50}}}'
+curl -X POST localhost:8000/api/v1/workflows/$WF/steps -H 'Content-Type: application/json' \
+  -d '{"name":"notify","step_type":"tool_action","dependencies":["gate"],\
+       "configuration":{"tool_name":"calculator","arguments":{"expression":"40 + 2"}}}'
+
+# 4. Activate, execute with input, and inspect the step trace
+curl -X POST localhost:8000/api/v1/workflows/$WF/activate
+curl -X POST localhost:8000/api/v1/workflows/$WF/execute -H 'Content-Type: application/json' \
+  -d '{"input_data":{"topic":"AI trends"}}'
+EXEC_ID=$(curl localhost:8000/api/v1/workflows/$WF/executions | jq -r '.[0].id')
+curl localhost:8000/api/v1/workflows/executions/$EXEC_ID/steps
+```
+
+If the mock returns `lead_count > 50`, `notify` runs; otherwise `gate` and `notify` are skipped — deterministic branching, visible in the step trace.
+
+See [docs/workflows.md](docs/workflows.md) for the full workflow reference.
 
 ---
 
@@ -188,10 +233,12 @@ nexus-ai/
 │   │   │   ├── core/       # config, logging, errors, redis
 │   │   │   ├── api/v1/     # versioned HTTP endpoints
 │   │   │   ├── ai/         # provider-agnostic model abstraction (incl. mock)
-│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, executions
+│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, tools, workflows
 │   │   │   ├── schemas/    # Pydantic request/response contracts
 │   │   │   ├── services/   # persistence + runtime assembly (CRUD)
-│   │   │   └── runtime/    # Agent Runtime + context builder
+│   │   │   ├── runtime/    # Agent Runtime + context builder
+│   │   │   ├── tools/      # tool registry, executor, permissions, built-ins
+│   │   │   └── workflow/   # engine, conditions, validator, worker, scheduler
 │   │   ├── alembic/        # database migrations
 │   │   └── tests/          # unit, integration, and E2E tests (SQLite)
 │   └── web/        # Next.js frontend (TypeScript, Tailwind)
@@ -224,6 +271,8 @@ All configuration flows through environment variables — **no secrets or hardco
 | `API_HOST` / `API_PORT` | API bind address and port            | `0.0.0.0` / `8000`                    |
 | `CORS_ORIGINS`          | Allowed browser origins              | `["http://localhost:3000"]`           |
 | `API_BASE_URL`          | Frontend→backend proxy target        | `http://localhost:8000`               |
+| `WORKFLOW_WORKER_ENABLED` | Auto-start the workflow worker + scheduler in the API | `false` |
+| `WORKFLOW_EXECUTE_SYNC`   | Run `POST /workflows/{id}/execute` inline (used by tests) | `false` |
 
 AI provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) are reserved for later phases and are not required now.
 
@@ -240,6 +289,7 @@ The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all 
 ## Documentation
 
 - [Architecture](docs/architecture.md) — system design, components, and key decisions.
+- [Workflows](docs/workflows.md) — the Phase 3 workflow orchestration reference (step types, conditions, triggers, worker/scheduler, API).
 - [Roadmap](docs/roadmap.md) — the phased plan from foundation to autonomous business engine.
 
 ---

@@ -186,9 +186,7 @@ class TestTextUtilityTool:
         assert result.data["reversed"] == "cba"
 
     def test_count_substring(self):
-        result = self.tool.execute(
-            action="count", text="banana", substring="an"
-        )
+        result = self.tool.execute(action="count", text="banana", substring="an")
         assert result.status == ToolResultStatus.SUCCESS
         assert result.data["count"] == 2
 

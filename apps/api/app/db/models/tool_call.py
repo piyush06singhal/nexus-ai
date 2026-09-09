@@ -44,9 +44,7 @@ class ToolCallRecord(Base):
     __tablename__ = "tool_calls"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    execution_id: Mapped[UUID] = mapped_column(
-        Uuid, index=True, nullable=False
-    )
+    execution_id: Mapped[UUID] = mapped_column(Uuid, index=True, nullable=False)
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
     arguments: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     result_status: Mapped[ToolCallStatus] = mapped_column(

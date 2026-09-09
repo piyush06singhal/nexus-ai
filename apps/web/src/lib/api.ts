@@ -3,7 +3,16 @@ import type {
   AgentExecution,
   AgentInput,
   HealthResponse,
+  StepExecution,
   Task,
+  Workflow,
+  WorkflowExecution,
+  WorkflowInput,
+  WorkflowStep,
+  WorkflowStepInput,
+  WorkflowTrigger,
+  WorkflowTriggerInput,
+  WorkflowValidationResult,
 } from "@/lib/types";
 
 /**
@@ -129,4 +138,154 @@ export function fetchTaskExecutions(taskId: string): Promise<AgentExecution[]> {
 /** Fetch the most recent executions across all tasks (activity feed). */
 export function fetchExecutions(limit = 50): Promise<AgentExecution[]> {
   return apiFetch<AgentExecution[]>(apiUrl(`/executions?limit=${limit}`));
+}
+
+// --- Workflows (Phase 3) ---
+
+export function fetchWorkflows(): Promise<Workflow[]> {
+  return apiFetch<Workflow[]>(apiUrl("/workflows"));
+}
+
+export function createWorkflow(input: WorkflowInput): Promise<Workflow> {
+  return apiFetch<Workflow>(apiUrl("/workflows"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getWorkflow(id: string): Promise<Workflow> {
+  return apiFetch<Workflow>(apiUrl(`/workflows/${id}`));
+}
+
+export function updateWorkflow(
+  id: string,
+  input: Partial<WorkflowInput>,
+): Promise<Workflow> {
+  return apiFetch<Workflow>(apiUrl(`/workflows/${id}`), {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteWorkflow(id: string): Promise<void> {
+  return apiFetch<void>(apiUrl(`/workflows/${id}`), { method: "DELETE" });
+}
+
+export function activateWorkflow(id: string): Promise<Workflow> {
+  return apiFetch<Workflow>(apiUrl(`/workflows/${id}/activate`), {
+    method: "POST",
+  });
+}
+
+export function pauseWorkflow(id: string): Promise<Workflow> {
+  return apiFetch<Workflow>(apiUrl(`/workflows/${id}/pause`), {
+    method: "POST",
+  });
+}
+
+export function validateWorkflow(id: string): Promise<WorkflowValidationResult> {
+  return apiFetch<WorkflowValidationResult>(apiUrl(`/workflows/${id}/validate`));
+}
+
+// Steps
+
+export function fetchWorkflowSteps(workflowId: string): Promise<WorkflowStep[]> {
+  return apiFetch<WorkflowStep[]>(apiUrl(`/workflows/${workflowId}/steps`));
+}
+
+export function createWorkflowStep(
+  workflowId: string,
+  input: WorkflowStepInput,
+): Promise<WorkflowStep> {
+  return apiFetch<WorkflowStep>(apiUrl(`/workflows/${workflowId}/steps`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateWorkflowStep(
+  stepId: string,
+  input: Partial<WorkflowStepInput>,
+): Promise<WorkflowStep> {
+  return apiFetch<WorkflowStep>(apiUrl(`/workflows/steps/${stepId}`), {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteWorkflowStep(stepId: string): Promise<void> {
+  return apiFetch<void>(apiUrl(`/workflows/steps/${stepId}`), {
+    method: "DELETE",
+  });
+}
+
+// Triggers
+
+export function fetchWorkflowTriggers(
+  workflowId: string,
+): Promise<WorkflowTrigger[]> {
+  return apiFetch<WorkflowTrigger[]>(apiUrl(`/workflows/${workflowId}/triggers`));
+}
+
+export function createWorkflowTrigger(
+  workflowId: string,
+  input: WorkflowTriggerInput,
+): Promise<WorkflowTrigger> {
+  return apiFetch<WorkflowTrigger>(apiUrl(`/workflows/${workflowId}/triggers`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteWorkflowTrigger(triggerId: string): Promise<void> {
+  return apiFetch<void>(apiUrl(`/workflows/triggers/${triggerId}`), {
+    method: "DELETE",
+  });
+}
+
+// Execute
+
+export function executeWorkflow(
+  workflowId: string,
+  input?: Record<string, unknown> | null,
+): Promise<WorkflowExecution> {
+  return apiFetch<WorkflowExecution>(apiUrl(`/workflows/${workflowId}/execute`), {
+    method: "POST",
+    body: input ? JSON.stringify({ input_data: input }) : "{}",
+  });
+}
+
+// Executions
+
+export function fetchWorkflowExecutions(
+  workflowId: string,
+): Promise<WorkflowExecution[]> {
+  return apiFetch<WorkflowExecution[]>(
+    apiUrl(`/workflows/${workflowId}/executions`),
+  );
+}
+
+export function getWorkflowExecution(
+  executionId: string,
+): Promise<WorkflowExecution> {
+  return apiFetch<WorkflowExecution>(
+    apiUrl(`/workflows/executions/${executionId}`),
+  );
+}
+
+export function fetchStepExecutions(
+  executionId: string,
+): Promise<StepExecution[]> {
+  return apiFetch<StepExecution[]>(
+    apiUrl(`/workflows/executions/${executionId}/steps`),
+  );
+}
+
+export function cancelWorkflowExecution(
+  executionId: string,
+): Promise<WorkflowExecution> {
+  return apiFetch<WorkflowExecution>(
+    apiUrl(`/workflows/executions/${executionId}/cancel`),
+    { method: "POST" },
+  );
 }
