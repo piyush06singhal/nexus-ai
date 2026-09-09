@@ -12,6 +12,7 @@ Registering a provider just means adding it here (or calling
 from __future__ import annotations
 
 from app.ai.interfaces import ModelProvider
+from app.ai.providers.mock_provider import MockProvider
 from app.ai.providers.openai_provider import OpenAIProvider
 
 # name -> callable that builds a provider instance.
@@ -38,4 +39,7 @@ def list_providers() -> list[str]:
 
 
 # Auto-register built-in providers at import time.
+# MockProvider is registered alongside OpenAI so ``provider="mock"`` agents can
+# be executed deterministically in tests and local dev without an API key.
 register_provider(OpenAIProvider.name, OpenAIProvider)
+register_provider(MockProvider.name, MockProvider)

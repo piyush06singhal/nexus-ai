@@ -6,7 +6,11 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.core.config import settings
-from app.db.models import Agent  # noqa: F401 - registers the Agent model
+from app.db.models import (  # noqa: F401 - registers all models on the metadata
+    Agent,
+    AgentExecution,
+    Task,
+)
 from app.db.session import Base
 
 # this is the Alembic Config object, which provides

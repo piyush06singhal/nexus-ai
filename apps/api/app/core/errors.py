@@ -62,6 +62,11 @@ class ServiceUnavailableError(NexusError):
     code = "service_unavailable"
 
 
+class PermissionDeniedError(NexusError):
+    status_code = 403
+    code = "permission_denied"
+
+
 def _error_envelope(error: NexusError) -> dict[str, Any]:
     return {"error": {"code": error.code, "detail": error.detail, "context": error.context}}
 

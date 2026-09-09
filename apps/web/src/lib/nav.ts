@@ -7,6 +7,7 @@ import {
   Settings,
   ShieldCheck,
   Target,
+  Wrench,
 } from "lucide-react";
 
 export interface NavItem {
@@ -21,6 +22,7 @@ export const NAV_SECTIONS: NavItem[] = [
   { href: "/missions", label: "Missions", description: "High-level business objectives the workforce is working toward.", icon: Target },
   { href: "/agents", label: "Agents", description: "Individual AI agents and their roles, capabilities, and status.", icon: Bot },
   { href: "/tasks", label: "Tasks", description: "Discrete units of work assigned to and executed by agents.", icon: ListChecks },
+  { href: "/tools", label: "Tools", description: "Tool definitions available to agents during execution.", icon: Wrench },
   { href: "/activity", label: "Activity", description: "A live feed of agent actions, tool calls, and system events.", icon: Activity },
   { href: "/approvals", label: "Approvals", description: "Actions awaiting human review before execution proceeds.", icon: ShieldCheck },
   { href: "/settings", label: "Settings", description: "Workforce, provider, security, and infrastructure configuration.", icon: Settings },

@@ -8,7 +8,90 @@ NEXUS lets you hand a high-level business objective to a system of AI agents tha
 2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
 3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
 
-> **Status: Phase 0 (Foundation).** This repository is a clean, runnable foundation for the platform. Nothing agent-like exists yet — the dashboard, API, database, and provider-agnostic AI abstraction are in place, and every future area is clearly marked as a placeholder.
+> **Status: Phase 2 (Tool & Action System).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI to browse registered tool definitions and inspect per-execution tool calls.
+
+---
+
+## Phase 1 — Agent Runtime
+
+The core loop is **User → API → Agent → Task → Agent Runtime → Model Provider → Agent Result → Execution Record**.
+
+```
+┌────┐   ┌──────────┐   ┌───────┐   ┌─────────┐   ┌───────────────┐
+│ UI │──▶│ API      │──▶│ Agent │──▶│ Task    │──▶│ Agent Runtime │──▶ Model Provider
+└────┘   │ /agents  │   │       │   │ /tasks  │   │  (validate →  │
+         │ /tasks   │   └───────┘   └─────────┘   │   build ctx →  │
+         │ /execute │                              │   execute →    │──▶ AgentResult
+         └──────────┘                              │   parse →      │        │
+                                                   │   persist)     │        ▼
+                                                   └───────────────┘   Execution Record
+                                                                       (DB)
+```
+
+- **Agents** carry a role, system prompt, and model configuration (provider, model, temperature, max_tokens). Only `active` agents can execute tasks.
+- **Tasks** are discrete units of work with an optional JSON input payload, assigned to a single agent.
+- **Executing a task** runs the runtime pipeline, calls the configured provider, parses the structured `AgentResult`, and persists it as an `AgentExecution` with token usage, cost estimate, and latency.
+- **Mock provider** (`provider = "mock"`) returns deterministic output with no API key, so the whole flow is exercisable locally and in CI.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Start the stack (or your existing local dev servers)
+docker compose up -d
+
+# 2. Create an active mock agent
+curl -X POST localhost:8000/api/v1/agents -H 'Content-Type: application/json' \
+  -d '{"name":"analyst","role":"analyst","status":"active","provider":"mock","model_name":"mock-model"}'
+
+# 3. Create + assign + execute a task
+TASK=$(curl -X POST localhost:8000/api/v1/tasks -H 'Content-Type: application/json' \
+  -d '{"title":"Summarize Q1","input_data":{"quarter":"Q1"}}' | jq -r .id)
+curl -X POST localhost:8000/api/v1/tasks/$TASK/assign -H 'Content-Type: application/json' \
+  -d '{"agent_id":"<agent_id>"}'
+curl -X POST localhost:8000/api/v1/tasks/$TASK/execute
+
+# 4. Watch the activity feed
+curl localhost:8000/api/v1/executions
+```
+
+The equivalent, nicer flow lives in the UI: **Agents** (create/activate/delete), **Tasks** (create/assign/execute/view executions), and **Activity** (global execution feed). Agent and task counts are surfaced on the dashboard.
+
+---
+
+## Phase 2 — Tool & Action System
+
+The runtime now runs a **tool-calling loop**: after the model generates, if its JSON contains `{"tool_calls": [...]}` the runtime executes each tool through the permission-gated `ToolExecutor`, feeds the results back, and loops — until the model returns a final `AgentResult` or `max_tool_iterations` is reached.
+
+**Registered tools** (`GET /api/v1/tools`): `calculator`, `datetime`, `text_utils`, `json_utils`.
+
+**Permission model:** non-dangerous tools are allowed by default; `dangerous` tools require an explicit allowlist; explicit deny always wins; an admin flag bypasses all checks.
+
+Every tool invocation is validated, authorized, timed-out (per-tool, thread-pool), and persisted as a `ToolCallRecord` in the `tool_calls` table — traceable to its execution, with arguments, result, and latency. Per-agent access is recorded in `agent_tool_permissions`.
+
+**Driving a real tool call locally (mock):** the runtime reads optional `model_params` on a mock agent — `script` (an ordered list of JSON responses) or `reply` (a single response) — and builds a scripted `MockProvider` from them. Passing `{"script": ["{\"tool_calls\":[...]}", "{\"summary\":...}"]}` makes the mock request a tool on its first call and return a final `AgentResult` after, so the full loop (request → execute → feed back → answer) runs end-to-end over the HTTP API with no provider injection and no API key.
+
+The **Tools** page in the UI lists every registered tool definition. The **Tasks** page embeds a per-execution tool-call inspector (`ToolCallsSection`) that fetches `GET /api/v1/tools/calls/{execution_id}` on demand.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Create an active mock agent that requests the calculator tool, then answers
+curl -X POST localhost:8000/api/v1/agents -H 'Content-Type: application/json' \
+  -d '{"name":"analyst","role":"analyst","status":"active","provider":"mock","model_name":"mock-model",
+       "model_params":{"script":["{\"tool_calls\":[{\"tool\":\"calculator\",\"arguments\":{\"expression\":\"6 * 7\"}}]}",
+                                  "{\"summary\":\"computed\",\"output\":{\"result\":42}}"]}}'
+
+# 2. Create + assign + execute a task (the mock drives the full tool-calling loop)
+TASK=$(curl -X POST localhost:8000/api/v1/tasks -H 'Content-Type: application/json' \
+  -d '{"title":"Calculate 6*7 using a tool","input_data":{}}' | jq -r .id)
+curl -X POST localhost:8000/api/v1/tasks/$TASK/assign -H 'Content-Type: application/json' \
+  -d '{"agent_id":"<agent_id>"}'
+curl -X POST localhost:8000/api/v1/tasks/$TASK/execute
+
+# 3. Inspect the persisted tool call for that execution
+EXEC_ID=$(curl localhost:8000/api/v1/executions | jq -r '.[0].id')
+curl localhost:8000/api/v1/tools/calls/$EXEC_ID
+```
 
 ---
 
@@ -85,10 +168,12 @@ pytest -v
 ruff check app tests
 ruff format --check app tests
 
-# Frontend lint + typecheck + build
+# Frontend lint + typecheck + build + tests
 cd apps/web
 npm run lint
+npx tsc --noEmit
 npm run build
+npm run test -- --run
 ```
 
 ---
@@ -102,13 +187,16 @@ nexus-ai/
 │   │   ├── app/
 │   │   │   ├── core/       # config, logging, errors, redis
 │   │   │   ├── api/v1/     # versioned HTTP endpoints
-│   │   │   ├── db/         # SQLAlchemy engine, sessions, models
-│   │   │   └── ai/         # provider-agnostic model abstraction
+│   │   │   ├── ai/         # provider-agnostic model abstraction (incl. mock)
+│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, executions
+│   │   │   ├── schemas/    # Pydantic request/response contracts
+│   │   │   ├── services/   # persistence + runtime assembly (CRUD)
+│   │   │   └── runtime/    # Agent Runtime + context builder
 │   │   ├── alembic/        # database migrations
-│   │   └── tests/
+│   │   └── tests/          # unit, integration, and E2E tests (SQLite)
 │   └── web/        # Next.js frontend (TypeScript, Tailwind)
-│       ├── src/app/        # App Router pages + layout
-│       ├── src/components/ # sidebar, header, dashboard, placeholders
+│       ├── src/app/        # App Router pages + layout + API proxy
+│       ├── src/components/ # sidebar, header, dashboard, status badges
 │       └── src/lib/        # API client, shared types, nav config
 ├── docs/           # architecture, roadmap
 ├── infrastructure/
@@ -128,7 +216,7 @@ All configuration flows through environment variables — **no secrets or hardco
 | ----------------------- | ------------------------------------ | ------------------------------------- |
 | `ENVIRONMENT`           | `development` / `test` / `production` | `development`                         |
 | `LOG_LEVEL`             | Application log level                | `INFO`                                |
-| `DATABASE_URL`          | SQLAlchemy Postgres connection URL   | `postgresql+psycopg://...@localhost:5432/nexus` |
+| `DATABASE_URL`          | SQLAlchemy Postgres connection URL   | `postgresql+psycopg://...@localhost:5433/nexus` |
 | `POSTGRES_USER`         | Postgres user                        | `nexus`                               |
 | `POSTGRES_PASSWORD`     | Postgres password                    | `nexus_dev`                           |
 | `POSTGRES_DB`           | Postgres database name               | `nexus`                               |
@@ -145,7 +233,7 @@ AI provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) 
 
 ## How the Frontend Reaches the Backend
 
-The Next.js app proxies `/api/*` to the backend through a rewrite in `next.config.ts`. The browser only ever talks to its own origin, so there is no CORS friction in local dev or in Docker. Set `API_BASE_URL` if the backend is not on `localhost:8000`.
+The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all route (`src/app/api/[...path]/route.ts`). Each request resolves `API_BASE_URL` fresh (default `localhost:8000`), so it works in local dev and in Docker without baking env vars at build time. The browser only ever talks to its own origin, so there is no CORS friction. Set `API_BASE_URL` if the backend is not on `localhost:8000`. The one exception is the health widget on the dashboard, which still uses the `/api/v1` proxy like everything else.
 
 ---
 

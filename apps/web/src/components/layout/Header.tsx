@@ -6,7 +6,7 @@ export function Header() {
       <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
         <span className="hidden sm:inline">Autonomous AI Workforce &amp; Company OS</span>
         <span className="hidden text-zinc-300 sm:inline dark:text-zinc-600">·</span>
-        <span>Foundation</span>
+        <span>Runtime</span>
       </div>
 
       <div className="flex items-center gap-3">

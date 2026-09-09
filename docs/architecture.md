@@ -1,6 +1,6 @@
 # NEXUS — System Architecture
 
-> **Phase 0 (Foundation).** This document describes the current architecture and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
+> **Phase 2 (Tool & Action System).** This document describes the current architecture (Foundation + Agent Runtime + Tool System) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
 
 ---
 
@@ -25,25 +25,42 @@ The engineering goal for the whole project is captured in a few principles:
 ```
                          ┌─────────────────────────────┐
         Browser          │         NEXUS Web           │
-   (dashboard shell) ──▶ │  Next.js · React · Tailwind │
+   (App Router pages) ──▶│  Next.js · React · Tailwind │
                          └──────────────┬──────────────┘
-                                        │  /api/*  (Next rewrite proxy, same-origin)
-                                        ▼
+                                        │  /api/*  (runtime catch-all proxy,
+                                        ▼   same-origin, API_BASE_URL per request)
                          ┌─────────────────────────────┐
                          │        NEXUS API            │
-                         │  FastAPI · Pydantic         │
-                         │  /api/v1                    │
+                         │  FastAPI · Pydantic ·        │
+                         │  /api/v1                       │
+                         │  agents · tasks · executions │
+                         │  tools · tool_calls          │
                          └───┬───────────────┬─────────┘
                              │               │
                  ┌───────────▼───┐   ┌───────▼────────┐
                  │  PostgreSQL   │   │     Redis      │
-                 │  SQLAlchemy   │   │  (future cache │
-                 │  Alembic      │   │   & queues)    │
-                 └───────────────┘   └────────────────┘
+                 │  agents        │   │  (future cache │
+                 │  tasks         │   │   & queues)    │
+                 │  agent_executions │               │
+                 │  tool_calls      │               │
+                 │  agent_tool_permissions            │
+                 └───────────┬───┘   └────────────────┘
+                             │
+                 ┌───────────▼───────────────────────┐
+                 │       Agent Runtime (app/runtime) │
+                 │  validate → build_context →       │
+                 │  tool-calling loop:               │
+                 │    generate → tool_calls? →      │
+                 │    ToolExecutor (validate →       │
+                 │      authorize → run → persist)   │
+                 │    → append results → repeat      │
+                 │  → parse → persist AgentExecution │
+                 └────────────────────────────────────┘
 
-        (Future: AI Provider adapters resolve through the model abstraction;
-         the agent runtime, task engine, memory, and orchestration build on
-         this foundation in later phases.)
+        AI providers resolve through the ModelProvider abstraction + registry
+        (mock, openai stub). Tools register in the tool registry and execute
+        through the permission-gated ToolExecutor. Memory and orchestration
+        build on this in later phases.
 ```
 
 ---
@@ -53,8 +70,10 @@ The engineering goal for the whole project is captured in a few principles:
 ### 3.1 Frontend (`apps/web`)
 
 - Next.js (App Router), React, Tailwind CSS, TypeScript (strict).
-- A dashboard **shell**: sidebar navigation (Dashboard, Missions, Agents, Tasks, Activity, Approvals, Settings) and a top header.
-- Every unfinished area renders a clear **placeholder** — no fake AI functionality.
+- A dashboard **shell**: sidebar navigation (Dashboard, Missions, Agents, Tasks, Activity, Approvals, Settings, Tools) and a top header.
+- A **Tools** page renders every registered tool definition (parameters, danger flag, timeout, tags), pulled live from `GET /api/v1/tools`.
+- The task execution detail embeds a **tool-call inspector** (`ToolCallsSection`) that fetches `GET /api/v1/tools/calls/{execution_id}` on demand.
+- Every still-unfinished area renders a clear **placeholder** — no fake AI functionality.
 - The `SystemStatus` widget fetches `/api/v1/health` to show live backend/database/Redis status.
 - API calls are same-origin, proxied to the backend by a runtime route handler (`app/api/[...path]/route.ts`).
 
@@ -64,12 +83,16 @@ FastAPI application with:
 
 - **Entry point** (`app/main.py`) — app factory, lifespan hook, CORS, router mounting, exception handlers.
 - **Configuration** (`app/core/config.py`) — pydantic-settings `Settings` singleton driven by environment variables and `.env`.
-- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Phase 0 ships a minimal `agents` table to prove the pipeline.
-- **API versioning** (`app/api/v1/`) — v1 endpoints mounted under `/api/v1`. Future versions are additive.
+- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Models live in `app/db/models/`: `Agent`, `Task`, `AgentExecution`, `ToolCallRecord`, `AgentToolPermission`.
+- **Schemas** (`app/schemas/`) — Pydantic request/response contracts decoupled from the ORM, plus the `AgentResult` structured-output contract and tool/tool-call read schemas.
+- **Services** (`app/services/`) — thin persistence CRUD (`AgentService`, `TaskService`, `ExecutionService`, `ToolCallService`, `PermissionService`) and a runtime-assembly dependency (`create_runtime`) that wires the runtime to a request-scoped session.
+- **Tools** (`app/tools/`) — the Tool & Action system: types, registry, permission context, and executor, plus built-in tools (see §3.5).
+- **Runtime** (`app/runtime/`) — the Agent Runtime orchestrator, the context builder, and the tool-calling loop (see §3.4).
+- **API versioning** (`app/api/v1/`) — v1 endpoints mounted under `/api/v1` for agents, tasks (create/assign/execute), executions, and tools/tool-calls; additive versioning for the future.
 - **Health endpoint** (`app/api/v1/endpoints/health.py`) — always returns 200 when reachable; individual checks degrade rather than failing the request.
 - **Error handling** (`app/core/errors.py`) — typed exception hierarchy rendered as a consistent JSON envelope; no internals leaked to clients.
 - **Logging** (`app/core/logging.py`) — structured, namespaced logging.
-- **Redis** (`app/core/redis.py`) — lazy client; Redis absence never blocks startup.
+- **Redis** (`app/core/redis.py`) — lazy client; Redis absence never blocks startup. Reserved for future queues/cache.
 
 ### 3.3 AI Abstraction (`app/api/app/ai/`)
 
@@ -89,7 +112,40 @@ agent →  model interface  →  provider adapter  →  vendor SDK
 
 Not: `agent → vendor SDK`.
 
-### 3.4 Infrastructure & Database
+`MockProvider` (`providers/mock_provider.py`) is a first-class, deterministic test double registered in the registry — executing an `active` agent with `provider="mock"` runs the full runtime loop with no API key. It supports an optional `script` (an ordered list of responses — e.g. a `tool_calls` request followed by a final `AgentResult`) or a single `reply`, so a mock agent can drive the entire tool-calling loop end-to-end over the HTTP API without provider injection.
+
+### 3.4 Agent Runtime (`app/runtime/`)
+
+The heart of Phase 1, extended in Phase 2 into a **tool-calling loop**. `AgentRuntime.execute_task` runs:
+
+```
+load agent → validate (assigned, active, provider+model) → begin execution (DB)
+  → build_context (system = role + system prompt + tool definitions;
+                   user = title + description + input JSON)
+  → repeat (up to max_tool_iterations):
+       provider.generate → if tool_calls: execute via ToolExecutor
+         (validate → authorize → run → persist) → append results to context
+       until model returns a final AgentResult
+  → parse AgentResult → complete execution (DB)
+```
+
+- **`context.py`** builds the `ChatMessage` list and a JSON-based, provider-agnostic tool-calling protocol: when tools are enabled, the system prompt includes formatted tool definitions and the user message tells the model how to request a tool (returning `{"tool_calls": [...]}`). `append_tool_results()` feeds each tool result back as an assistant + user message pair. `agent_is_executable` gates on `status == active`.
+- **`runtime.py`** orchestrates services and the resolved `ModelProvider`. On each iteration it inspects the model's JSON for a `tool_calls` array; if present, it executes each call via `ToolExecutor` and loops. It stops when the model returns a final `AgentResult`, when it exceeds `max_tool_iterations` (→ `FAILED`), or when tools are disabled (`enable_tools=False` reproduces Phase 1 behavior). Token usage accumulates across iterations. On parse/model failure it persists a `FAILED` execution and marks the task `failed`, so nothing is lost. Successful runs store `AgentResult.output_data`, token usage, a per-provider cost estimate, and `latency_ms`. A provider may be injected (tests) or resolved per-execution from the agent's `provider` field via the registry.
+- Every run is persisted as an **`AgentExecution`** — typed, traced, reproducible — with each tool invocation recorded as a **`ToolCallRecord`**.
+
+### 3.5 Tool & Action System (`app/tools/`)
+
+The Phase 2 capability boundary between agent **reasoning** and tool **side effects**.
+
+- **`types.py`** — shared tool contracts: `ToolDefinition` (name, description, parameters, `dangerous` flag, timeout, tags), `ToolParameter` (name/type/required/default/enum), and `ToolResult` (status: success/error/timeout/denied; data, error, execution time).
+- **`base.py`** — `BaseTool` ABC: `definition`, `execute(**kwargs)`, and `validate_arguments()` which coerces types and enforces required/enum constraints.
+- **`registry.py`** — module-level registry with auto-registration of built-ins; `register_tool`/`get_tool`/`unregister_tool`/`get_tool_definitions`/`list_tool_names`/`tool_exists`.
+- **`permissions.py`** — `PermissionContext` (agent id, allowed/denied tool sets, admin flag) and `check_permission()`: admin bypass → explicit deny → allowlist check → dangerous-guard → allowed. Sensitive (`dangerous`) tools require an explicit allowlist; non-dangerous tools are allowed by default.
+- **`executor.py`** — `ToolExecutor` is the single entry point. Flow: resolve from registry → validate arguments → check permissions → execute with a per-tool timeout on a shared thread pool → persist to `tool_calls`. A resolution/validation failure or permission denial is returned as an `ERROR`/`DENIED` `ToolResult` (not raised), so the runtime can keep looping.
+- **`builtin/`** — `calculator` (safe expression evaluator), `datetime` (now/format/diff), `text_utils` (case/count/trim/replace/reverse/words), `json_utils` (parse/validate/pretty/minify/query/keys).
+- **Persistence** — `tool_calls` (execution id, tool name, arguments JSON, result status/data/error, execution time, iteration) and `agent_tool_permissions` (per-agent granted/denied). Permissions are loaded per-execution by `PermissionService.get_context()`.
+
+### 3.6 Infrastructure & Database
 
 - **Docker Compose** (root) — `postgres`, `redis`, `api`, `web` services with healthchecks and dependency ordering.
 - **PostgreSQL 16** — primary store, accessed via SQLAlchemy; migrations via Alembic.
@@ -105,6 +161,7 @@ Not: `agent → vendor SDK`.
 - **API ↔ Database:** via SQLAlchemy ORM through the DI-provided session. Domain logic never touches the DB driver directly.
 - **API ↔ Redis:** via a lazy client; degradation is reported, never fatal.
 - **API ↔ AI providers:** always through the `ModelProvider` abstraction and registry. No endpoint depends on a concrete provider.
+- **Runtime ↔ Tools:** the runtime calls `ToolExecutor.execute(...)` (never a tool directly); the executor enforces validation, authorization, timeout, and persistence before returning a `ToolResult`. Tools never have direct access to the database or model context — only to the arguments the runtime passes.
 
 ---
 
@@ -120,24 +177,34 @@ Not: `agent → vendor SDK`.
 | Health semantics | 200 even when a dependency is degraded | Operators distinguish "API down" from "dependency down"; the checks field carries detail. |
 | Redis | lazy + optional | Keeps the core API bootable; health reports Redis state. |
 | Web→API | same-origin runtime proxy | Avoids CORS entirely in dev and Docker. Env vars resolved per-request, not at build time. |
-| Observability | `ModelResponse` carries `latency_ms`, `usage`, timestamps; execution IDs are planned | Readiness without building a platform yet. |
+| Observability | `ModelResponse` carries `latency_ms`, `usage`, timestamps; every run persisted as an `AgentExecution` | Each execution is typed, traced, and reproducible. |
+| Runtime pipeline | `validate → build_context → execute → parse → persist` in `app/runtime/` | A single deterministic path for one agent + one task + one model + reliable persistence. |
+| Structured output | `AgentResult` is the contract between model and business layer | Callers trust the schema, not free-form model JSON; parse failures are surfaced and persisted. |
+| Provider injection | Runtime accepts an injected provider or resolves via the registry from `agent.provider` | Tests override the provider (MockProvider) without touching production wiring. |
+| Testability | Services/runtime tested on in-memory SQLite (`StaticPool`); API via dependency overrides | The full loop runs in CI without Docker or an API key. |
 | Security | non-root Docker users; secrets strictly in env; no `.env` committed | Least-privilege and no-secret-commit from day one. |
+| Tool signature | `BaseTool.execute(**kwargs)` taking validated keyword args | Keeps execution uniform across tools and lets `validate_arguments` coerce types before dispatch. |
+| Tool permissions | `PermissionContext`: admin bypass → explicit deny → allowlist → dangerous-guard → allowed | Sensitive tools are opt-in; non-dangerous tools flow by default; deny always wins. Explicit deny beats allowlist so an operator can hard-block a tool. |
+| Failure handling | Executor returns an `ERROR`/`DENIED` `ToolResult` instead of raising | The tool-calling loop can observe the failure, feed it back to the model, and continue. |
+| Tool-calling protocol | JSON-shaped tool requests inside message content (`{"tool_calls": [...]}`) with results appended as assistant/user pairs | Provider-agnostic — works with the mock and any provider without tight coupling to a vendor's native tool-call schema. |
+| Tool timeouts | Per-tool `timeout_seconds` enforced via a shared `ThreadPoolExecutor` | A misbehaving tool cannot hang the model loop indefinitely. |
+| Bool defaults in Alembic | `server_default=sa.true()` for boolean columns | `1` is not valid PostgreSQL boolean SQL; `sa.true()` ports across PostgreSQL and SQLite. |
 
 ---
 
-## 6. Data Model (Phase 0)
+## 6. Data Model (Phase 2)
 
-Phase 0 intentionally creates **only** an `agents` table (a stub proving the ORM + Alembic pipeline). The schema is designed to extend to:
+Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runtime tables; Phase 2 adds the tool tables:
 
-- `users`, `organizations` — tenancy and identity
-- `missions` — high-level objectives
-- `agents` — AI workers (exists as a stub)
-- `tasks` — units of work
-- `tools` — executable capabilities
-- `executions` — traceable runs with IDs, status, latency, costs
-- `memories` — short/long-term state
-- `approvals` — human-gate checkpoints
-- `evaluations` — agent performance
+- **`agents`** — id, name (unique), role, description, `status` (draft/active/inactive), `system_prompt`, and model config (`provider`, `model_name`, `temperature`, `max_tokens`, `model_params` JSON). Only `active` agents execute tasks.
+- **`tasks`** — id, title, description, `input_data` (JSON payload for the agent), `status` (pending/queued/in_progress/completed/failed/cancelled), `assigned_agent_id` FK → agents, and timestamps including `executed_at`.
+- **`agent_executions`** — id, `task_id` + `agent_id`, `status` (running/succeeded/failed/cancelled), `input_data`/`output_data`/`error`, the resolved `provider` + `model_name`, token usage (`prompt/completion/total`), `estimated_cost`, `latency_ms`, and timestamps. This is the auditable record of "what actually happened."
+- **`tool_calls`** — id, `execution_id` (indexed FK → agent_executions), `tool_name`, `arguments` JSON, `result_status` (success/error/timeout/denied), `result_data`/`result_error` JSON, `execution_time_ms`, `iteration`, `created_at`. One row per tool invocation within an execution, so the runtime's tool activity is fully traceable.
+- **`agent_tool_permissions`** — id, `agent_id` (indexed), `tool_name`, `granted` boolean (default `true`), `created_at`. An empty set allows all non-dangerous tools; populated rows restrict/deny; a `granted=false` row hard-denies a tool.
+
+Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
+
+Planned for later phases (not yet created): `users`, `organizations`, `missions`, `memories`, `approvals`, `evaluations`.
 
 These arrive incrementally; none are created prematurely.
 
@@ -161,9 +228,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.3 Agent Runtime
 
-- **Phase:** 1 (Agent Runtime)
-- **Design accommodation:** The `ModelProvider` Protocol and registry (`app/ai/`) provide the core abstraction. The reasoning loop (`generate` → act → repeat) will be implemented as an `AgentRunner` that consumes `ModelProvider` and `ToolRegistry`.
-- **Interface points:** `ModelProvider.generate()`, `ModelProvider.stream()`, `ModelProvider.structured_output()`. The `AgentRunner` class orchestrates the loop.
+- **Phase:** 1 (Agent Runtime) — *built*
+- **Design accommodation:** `app/runtime/` implements a single deterministic execution pipeline (`validate → build_context → execute → parse → persist`) consuming a resolved `ModelProvider`. `AgentExecution` records token usage, cost, latency, and errors, so every run is typed and traced. The `MockProvider` is registered in the registry for keyless local/CI execution.
+- **Interface points:** `AgentRuntime.execute_task()`, `build_context()`, the `ModelProvider` Protocol + registry, and the `AgentResult` schema. A reasoning *loop* (multi-step `generate → act → repeat` with tools) is future work (Phase 2+); Phase 1 executes a single task end-to-end.
 
 ### 7.4 Multi-Agent Communication
 
@@ -173,9 +240,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.5 Tool & Action System
 
-- **Phase:** 2 (Tool System)
-- **Design accommodation:** A tool registry pattern where each tool is a typed, sandboxed capability. The permission boundary between agent reasoning and tool side effects is enforced at the registry level.
-- **Interface points:** `ToolRegistry.register()`, `ToolRegistry.execute()`, `Tool` protocol with `name`, `description`, `parameters`, `execute()`.
+- **Phase:** 2 (Tool System) — *built*
+- **Design accommodation:** `app/tools/` implements a registry (`register`/`get`/`unregister`/`list`), a permission-gated `ToolExecutor`, and built-in tools. Each tool is a typed, sandboxed capability (argument validation → authorization → timeout → persistence). The runtime's tool-calling loop drives them.
+- **Interface points:** `get_tool(name)`, `register_tool(tool)`, `ToolExecutor.execute(...)`, `check_permission(...)`, `BaseTool.definition`/`execute`. The executor returns structured `ToolResult`s so the loop can continue past failures; a reasoning loop over arbitrary vendor-native tool schemas is future work.
 
 ### 7.6 Browser Automation & Computer Use
 
@@ -283,9 +350,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ## 8. Future Architecture (later phases)
 
-- **Phase 1+ (Agent Runtime):** real provider adapters (OpenAI, Anthropic, Gemini, local); agent reasoning loop; structured outputs.
+- **Phase 1+ (Agent Runtime):** real provider adapters (OpenAI, Anthropic, Gemini, local); structured outputs.
+- **Phase 2+ (Tool & Action System):** a richer tool set (web fetch/HTTP, file/shell in a sandbox, browser automation), per-agent permission management UI + endpoint, and vendor-native tool-call schema adoption for real providers.
 - **Task engine:** a DB-backed queue and worker process, with `execution_id` observability.
-- **Tool system:** a sandboxed tool-execution boundary with authorization gating.
 - **Memory:** short-term (context/conversation) and long-term (vector/searchable) stores.
 - **Multi-agent orchestration:** mission decomposition, role assignment, coordination, retries, failover.
 - **Approvals & RBAC:** human-in-the-loop gates for sensitive side effects.

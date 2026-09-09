@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Marked items in later phases are planned, not yet built — nothing beyond Phase 0 currently exists.**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Marked items in later phases are planned, not yet built. Phase 0 (Foundation), Phase 1 (Agent Runtime), and Phase 2 (Tool & Action System) are complete.**
 
 ---
 
@@ -26,21 +26,32 @@ Set up the clean, runnable engineering foundation.
 
 ---
 
-## 🔜 Phase 1 — Agent Runtime
+## ✅ Phase 1 — Agent Runtime *(current)*
 
-- Real model provider adapters behind the abstraction (OpenAI, Anthropic, Gemini, local).
-- Core data models: full `agents`, `missions`, `tasks` + CRUD APIs + ORM tests.
-- A basic **agent reasoning loop** (`generate` → act → repeat) against tools, with structured outputs validated by Pydantic.
+- ~~Real model provider adapters behind the abstraction~~ _(reserved; the provider-agnostic seam is in place)_
+- Core data models: `agents` (full), `tasks`, `agent_executions` + CRUD APIs + ORM tests.
+- A basic **agent execution** (`load agent → validate → build context → execute → parse → persist`) with structured outputs validated by Pydantic.
+- `MockProvider` registered in the registry so the whole loop runs deterministically without an API key.
+- Frontend pages for Agents, Tasks (assign + execute + per-task executions), and a global Activity execution feed; dashboard shows live agent/task counts.
+- Unit + integration + E2E tests (SQLite-backed) plus live PostgreSQL verification.
 
-**Exit criteria:** an agent can complete a scripted task using a real or stubbed provider, with a typed, traced call path.
+**Exit criteria (met):** an agent completes a scripted task using the mock (or real) provider with a typed, traced call path persisted to an `AgentExecution` record.
 
-## Phase 2 — Tool System
+## ✅ Phase 2 — Tool System *(completed)*
 
-- Executable **tools** as typed, sandboxed capabilities.
-- Permission/authorization boundary between agent reasoning and tool side effects.
-- Tool registry, argument validation, and failure handling.
+- Executable **tools** as typed, sandboxed capabilities (`app/tools/`).
+- Tool **registry** with auto-registration of built-ins and `register`/`get`/`unregister`/`list`/`exists` operations.
+- **Argument validation** against each tool's parameter schema (type coercion, required checks, enums).
+- Tool **permissions** — a `PermissionContext` gate between agent reasoning and tool side effects: non-dangerous tools allowed by default, `dangerous` tools require an explicit allowlist, explicit deny overrides, and an admin bypass.
+- **`ToolExecutor`** — the single entry point: resolve → validate → authorize → execute (with per-tool timeout via a thread pool) → persist to DB.
+- Four **built-in tools**: `calculator` (safe expression evaluator), `datetime` (now/format/diff), `text_utils` (case/count/trim/replace/reverse/words), and `json_utils` (parse/validate/pretty/minify/query/keys).
+- Concrete **DB models + Alembic migration** (`0003`): `tool_calls` (every invocation within an execution) and `agent_tool_permissions` (per-agent access).
+- **Runtime integration** — `AgentRuntime` now runs a tool-calling loop: `model.generate` → if `tool_calls` → execute via `ToolExecutor` → feed results back → repeat until a final `AgentResult`. Token usage accumulates across iterations; `max_tool_iterations` prevents runaway loops; a per-iteration `enable_tools` flag retains Phase 1 behavior.
+- **API endpoints**: `GET /api/v1/tools`, `GET /api/v1/tools/{name}`, `GET /api/v1/tools/calls/{execution_id}`.
+- **Frontend**: a Tools page listing every registered tool (params, danger, timeout, tags) and tool-call inspection inside the task execution detail.
+- Comprehensive tests: built-in tools, registry, executor/permissions, runtime tool-calling loop, and tool API.
 
-**Exit criteria:** an agent can invoke approved tools safely; sensitive tools require authorization.
+**Exit criteria (met):** an agent can invoke approved tools safely via the runtime loop; sensitive (`dangerous`) tools require explicit authorization; every tool call is validated, authorized, timed-out, and persisted.
 
 ## Phase 3 — Memory
 
@@ -103,7 +114,7 @@ The following 22 capability areas drive the architecture. Each is designed in Ph
 | 2 | Mission System | 1 | `missions` table design placeholder in data model; CRUD endpoint pattern |
 | 3 | Agent Runtime | 1 | `ModelProvider` abstraction + registry; agent reasoning loop interface |
 | 4 | Multi-Agent Communication | 4 | Event/message bus interface via Redis pub/sub or similar |
-| 5 | Tool & Action System | 2 | Tool registry pattern; permission boundary design in `app/tools/` |
+| 5 | Tool & Action System | 2 | Built: `app/tools/` registry + executor + `PermissionContext`; built-in tools; `tool_calls` + `agent_tool_permissions` tables |
 | 6 | Browser Automation & Computer Use | 3 | Sandbox execution interface; isolated container runtime |
 | 7 | Memory Architecture | 3 | Short-term (context window) + long-term (vector DB) store interfaces |
 | 8 | Verification & Self-Correction | 7 | Verification hooks in agent loop; evaluation pipeline interface |
