@@ -56,7 +56,7 @@ The engineering goal for the whole project is captured in a few principles:
 - A dashboard **shell**: sidebar navigation (Dashboard, Missions, Agents, Tasks, Activity, Approvals, Settings) and a top header.
 - Every unfinished area renders a clear **placeholder** — no fake AI functionality.
 - The `SystemStatus` widget fetches `/api/v1/health` to show live backend/database/Redis status.
-- API calls are same-origin, proxied to the backend by a `next.config.ts` rewrite.
+- API calls are same-origin, proxied to the backend by a runtime route handler (`app/api/[...path]/route.ts`).
 
 ### 3.2 Backend (`apps/api`)
 
@@ -119,7 +119,7 @@ Not: `agent → vendor SDK`.
 | API versioning | single `api_v1_prefix` constant; additive routers | v2 is a new router, not a fork of existing code. |
 | Health semantics | 200 even when a dependency is degraded | Operators distinguish "API down" from "dependency down"; the checks field carries detail. |
 | Redis | lazy + optional | Keeps the core API bootable; health reports Redis state. |
-| Web→API | same-origin proxy rewrite | Avoids CORS entirely in dev and Docker. |
+| Web→API | same-origin runtime proxy | Avoids CORS entirely in dev and Docker. Env vars resolved per-request, not at build time. |
 | Observability | `ModelResponse` carries `latency_ms`, `usage`, timestamps; execution IDs are planned | Readiness without building a platform yet. |
 | Security | non-root Docker users; secrets strictly in env; no `.env` committed | Least-privilege and no-secret-commit from day one. |
 
@@ -143,7 +143,145 @@ These arrive incrementally; none are created prematurely.
 
 ---
 
-## 7. Future Architecture (later phases)
+## 7. Capability Accommodation Matrix
+
+The 22 architecture requirement areas drive NEXUS's long-term design. Each is designed in Phase 0 to be implementable without rewrites; none are built prematurely. This matrix shows how each capability is architecturally accommodated from day one.
+
+### 7.1 Automation & Workflow Engine
+
+- **Phase:** 4 (Multi-Agent Orchestration)
+- **Design accommodation:** A task queue interface (`app/tasks/`) with a worker process abstraction. The current `SessionLocal` and Redis client establish the pattern for DB-backed queues and pub/sub event dispatch.
+- **Interface points:** `TaskQueue.submit()`, `TaskQueue.claim()`, `TaskQueue.complete()` — to be implemented with Redis or Postgres advisory locks.
+
+### 7.2 Mission System
+
+- **Phase:** 1 (Agent Runtime)
+- **Design accommodation:** The `missions` table design placeholder exists in the data model (Section 6). The `agents` stub table proves the ORM + Alembic pipeline that `missions` will follow. CRUD endpoint pattern established by the health endpoint structure.
+- **Interface points:** `Mission` model, `MissionService`, `POST /api/v1/missions`, `GET /api/v1/missions/{id}`.
+
+### 7.3 Agent Runtime
+
+- **Phase:** 1 (Agent Runtime)
+- **Design accommodation:** The `ModelProvider` Protocol and registry (`app/ai/`) provide the core abstraction. The reasoning loop (`generate` → act → repeat) will be implemented as an `AgentRunner` that consumes `ModelProvider` and `ToolRegistry`.
+- **Interface points:** `ModelProvider.generate()`, `ModelProvider.stream()`, `ModelProvider.structured_output()`. The `AgentRunner` class orchestrates the loop.
+
+### 7.4 Multi-Agent Communication
+
+- **Phase:** 4 (Multi-Agent Orchestration)
+- **Design accommodation:** Redis pub/sub or a dedicated message bus. The existing `get_redis_client()` in `app/core/redis.py` establishes the connection pattern. Agent-to-agent messages will use an event schema with `execution_id` propagation.
+- **Interface points:** `EventBus.publish()`, `EventBus.subscribe()`. Events carry `execution_id` for tracing.
+
+### 7.5 Tool & Action System
+
+- **Phase:** 2 (Tool System)
+- **Design accommodation:** A tool registry pattern where each tool is a typed, sandboxed capability. The permission boundary between agent reasoning and tool side effects is enforced at the registry level.
+- **Interface points:** `ToolRegistry.register()`, `ToolRegistry.execute()`, `Tool` protocol with `name`, `description`, `parameters`, `execute()`.
+
+### 7.6 Browser Automation & Computer Use
+
+- **Phase:** 3 (Memory) or later
+- **Design accommodation:** Sandbox execution interface for isolated container-based browser automation. The Docker architecture already supports per-service isolation.
+- **Interface points:** `BrowserAction` type, `Sandbox.execute()` with timeout/resource limits.
+
+### 7.7 Memory Architecture
+
+- **Phase:** 3 (Memory)
+- **Design accommodation:** Short-term memory (context window management) and long-term memory (vector DB or structured store). The `ModelResponse.usage` field already tracks token consumption, which drives context window decisions.
+- **Interface points:** `MemoryStore.store()`, `MemoryStore.retrieve()`, `MemoryStore.search()`.
+
+### 7.8 Verification & Self-Correction
+
+- **Phase:** 7 (Autonomous Business Engine)
+- **Design accommodation:** Verification hooks in the agent loop. After each `generate` → tool call, a verification step checks output correctness. The evaluation pipeline interface supports scoring.
+- **Interface points:** `Verifier.verify()`, `CorrectionLoop.apply()`.
+
+### 7.9 Failure Recovery & Resilience
+
+- **Phase:** 4 (Multi-Agent Orchestration)
+- **Design accommodation:** Retry patterns with exponential backoff, dead-letter queues for failed tasks, and circuit breaker interfaces for external service calls.
+- **Interface points:** `RetryPolicy`, `DeadLetterQueue`, `CircuitBreaker`.
+
+### 7.10 Permission & Security System
+
+- **Phase:** 6 (AI Company)
+- **Design accommodation:** RBAC model with role hierarchy. Auth middleware pattern. Policy engine for fine-grained access control. The existing `CORS_ORIGINS` config establishes the security config pattern.
+- **Interface points:** `AuthService.authorize()`, `PolicyEngine.evaluate()`, `RBAC` role/permission models.
+
+### 7.11 Human-in-the-Loop Gates
+
+- **Phase:** 5 (AI Employee OS)
+- **Design accommodation:** Approval workflow model where sensitive actions pause for human review. The `approvals` table and webhook/callback pattern for external input are planned.
+- **Interface points:** `ApprovalService.request()`, `ApprovalService.approve()`, `ApprovalService.reject()`.
+
+### 7.12 Observability & Telemetry
+
+- **Phase:** 5 (AI Employee OS)
+- **Design accommodation:** Structured logging via `app/core/logging.py` is already in place. Execution tracing will propagate `execution_id` across all operations. The `ModelResponse` already carries `latency_ms` and `usage`.
+- **Interface points:** `execution_id` propagation, structured log fields, metrics export.
+
+### 7.13 Evaluation & Benchmarking
+
+- **Phase:** 7 (Autonomous Business Engine)
+- **Design accommodation:** Evaluation harness interface for running agent/task benchmarks. Metrics collection in the agent loop captures success rates, latency, and cost.
+- **Interface points:** `Evaluator.run()`, `Benchmark.suite()`, `MetricCollector`.
+
+### 7.14 AI Employee Model
+
+- **Phase:** 5 (AI Employee OS)
+- **Design accommodation:** Employee schema (role, permissions, status, schedule) extends the existing `agents` table. Dashboard integration for live agent status.
+- **Interface points:** `Employee` model, `EmployeeService`, dashboard status API.
+
+### 7.15 AI Company Layer
+
+- **Phase:** 6 (AI Company)
+- **Design accommodation:** Organization/workspace model with multi-tenancy via `tenant_id` column. The `organizations` table and workspace settings are planned.
+- **Interface points:** `Organization` model, `Workspace` model, `tenant_id` column on all domain tables.
+
+### 7.16 Dynamic Agent Creation
+
+- **Phase:** 1 (Agent Runtime)
+- **Design accommodation:** Agent factory pattern where missions are decomposed into agent roles, and new agent instances are spawned at runtime. The `agents` table stores agent definitions.
+- **Interface points:** `AgentFactory.create()`, `AgentFactory.spawn()`.
+
+### 7.17 Resource & Budget Management
+
+- **Phase:** 6 (AI Company)
+- **Design accommodation:** Token/cost tracking in `ModelResponse.usage` is already in place. Budget limits will be enforced at the provider and mission level via config.
+- **Interface points:** `BudgetManager.check()`, `BudgetManager.charge()`, `UsageTracker`.
+
+### 7.18 Feedback Loops & Learning
+
+- **Phase:** 7 (Autonomous Business Engine)
+- **Design accommodation:** Feedback collection interface where humans or automated verifiers provide scores. The evaluation scoring pipeline processes feedback to improve future agent behavior.
+- **Interface points:** `FeedbackCollector.submit()`, `ScorePipeline.process()`.
+
+### 7.19 Simulation & Sandbox
+
+- **Phase:** 8 (Evaluation, Security & Production Hardening)
+- **Design accommodation:** Isolated execution environments using container-per-agent or container-per-task patterns. The Docker architecture supports this directly.
+- **Interface points:** `Sandbox.create()`, `Sandbox.execute()`, `Sandbox.destroy()`.
+
+### 7.20 Agent Marketplace
+
+- **Phase:** 8 (Evaluation, Security & Production Hardening)
+- **Design accommodation:** Agent template registry where pre-built agent definitions are published and subscribed. The `ModelProvider` registry pattern extends naturally to agent templates.
+- **Interface points:** `AgentTemplate.register()`, `AgentTemplate.instantiate()`, `Marketplace.publish()`.
+
+### 7.21 Closed-Loop Autonomous Business
+
+- **Phase:** 7 (Autonomous Business Engine)
+- **Design accommodation:** Long-running mission engine with goal-tracking state machine. The mission decomposition + execution loop runs continuously, verifying progress against business objectives.
+- **Interface points:** `MissionEngine.run()`, `GoalTracker.progress()`, `SelfHealing.recover()`.
+
+### 7.22 Cross-Cutting: Config, Secrets, Auth
+
+- **Phase:** 6 (AI Company)
+- **Design accommodation:** `pydantic-settings` config is already the single source of truth. Env-based secrets are the pattern (`.env` files, Docker secrets, cloud secret managers). Auth middleware will wrap FastAPI dependencies.
+- **Interface points:** `Settings` singleton, `SecretsManager.get()`, `AuthMiddleware`.
+
+---
+
+## 8. Future Architecture (later phases)
 
 - **Phase 1+ (Agent Runtime):** real provider adapters (OpenAI, Anthropic, Gemini, local); agent reasoning loop; structured outputs.
 - **Task engine:** a DB-backed queue and worker process, with `execution_id` observability.

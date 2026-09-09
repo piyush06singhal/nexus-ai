@@ -52,6 +52,17 @@ setup_web() {
   cd "$ROOT_DIR"
 }
 
+setup_shared() {
+  log "Setting up shared types package ($ROOT_DIR/packages/shared)"
+  cd "$ROOT_DIR/packages/shared"
+  check_cmd node
+  check_cmd npm
+
+  log "Installing shared package dependencies"
+  npm install
+  cd "$ROOT_DIR"
+}
+
 setup_env() {
   if [ -f "$ROOT_DIR/.env" ]; then
     log ".env already exists; leaving it unchanged"
@@ -82,11 +93,13 @@ MODE="${1:-all}"
 case "$MODE" in
   --backend) setup_backend ;;
   --web) setup_web ;;
+  --shared) setup_shared ;;
   all)
     check_cmd docker
     setup_env
     setup_backend
     setup_web
+    setup_shared
     setup_stack
     setup_migrate
     ;;

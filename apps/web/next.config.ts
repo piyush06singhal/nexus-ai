@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Standalone mode produces a self-contained output for Docker deployments,
+  // reducing the final image size significantly (no node_modules in the runner).
+  output: "standalone",
+
   // API calls to `/api/*` are proxied to the NEXUS backend at *runtime* by the
   // catch-all route handler in `src/app/api/[...path]/route.ts`. We deliberately
   // avoid a `next.config` rewrite here: env vars referenced in config are baked

@@ -1,5 +1,6 @@
 # NEXUS Frontend runtime image (Next.js).
-# Multi-stage: install deps, build, then run `next start`.
+# Multi-stage: install deps, build standalone output, then run with minimal deps.
+# Uses Next.js standalone mode to reduce image size by ~80%.
 
 # ---- deps: install node_modules from lockfile ----
 FROM node:24-alpine AS deps
@@ -7,7 +8,7 @@ WORKDIR /app/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci
 
-# ---- builder: compile the Next.js app ----
+# ---- builder: compile the Next.js standalone output ----
 FROM node:24-alpine AS builder
 WORKDIR /app/apps/web
 COPY --from=deps /app/apps/web/node_modules ./node_modules
@@ -15,12 +16,28 @@ COPY apps/web/ ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# ---- runner: serve the compiled app ----
+# ---- runner: serve the standalone output with minimal deps ----
 FROM node:24-alpine AS runner
-WORKDIR /app/apps/web
+WORKDIR /app
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-COPY --from=builder /app/apps/web/ ./
+
+# Non-root user (security: least privilege by default).
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nexus
+
+# The standalone output's root represents the app dir (server.js sits alongside
+# node_modules). Copy public first so it is never shadowed, then the standalone
+# tree, then static assets into the tree.
+COPY --from=builder --chown=nexus:nodejs /app/apps/web/public ./public
+COPY --from=builder --chown=nexus:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nexus:nodejs /app/apps/web/.next/static ./.next/static
+
+USER nexus
 
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["node", "server.js"]
