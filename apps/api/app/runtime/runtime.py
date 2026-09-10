@@ -36,7 +36,7 @@ from app.services.permission_service import PermissionService
 from app.services.task_service import TaskService
 from app.tools.executor import ToolExecutor
 from app.tools.registry import get_tool_definitions
-from app.tools.types import ToolCallRecord
+from app.tools.types import ToolCallRecord, ToolResultStatus
 
 logger = get_logger(__name__)
 
@@ -137,6 +137,9 @@ class AgentRuntime:
         execution = self._executions.begin(
             task_id=task.id, agent_id=agent.id, input_data=input_payload
         )
+        # Tag the execution with the task title so memory extraction can name it.
+        execution.metadata_json = json.dumps({"task_title": task.title})
+        self._executions._db.commit()
         self._tasks.mark_in_progress(task.id)
 
         options = GenerationOptions(
@@ -149,10 +152,19 @@ class AgentRuntime:
             # Determine whether to use tool calling.
             tool_defs = get_tool_definitions() if self._enable_tools else None
 
-            messages = build_context(agent, task, tool_definitions=tool_defs)
+            # Retrieve relevant memories and inject them into context (Phase 4).
+            memory_inputs = self._retrieve_memories(agent, task)
+
+            messages = build_context(
+                agent,
+                task,
+                tool_definitions=tool_defs,
+                memories=memory_inputs or None,
+            )
             started = datetime.now(UTC)
             all_tool_calls: list[ToolCallRecord] = []
             total_usage = None
+            used_tools: list[str] = []
 
             try:
                 # --- Tool-calling loop ---
@@ -176,6 +188,11 @@ class AgentRuntime:
                             db=self._executions._db,
                         )
                         all_tool_calls.extend(tool_call_records)
+                        used_tools.extend(
+                            tc.tool_name
+                            for tc in tool_call_records
+                            if tc.result.status == ToolResultStatus.SUCCESS
+                        )
 
                         # Append results to context and continue the loop.
                         messages = append_tool_results(messages, tool_call_records)
@@ -234,6 +251,10 @@ class AgentRuntime:
                 estimated_cost=estimate,
             )
             self._tasks.mark_completed(task.id)
+
+            # Extract and persist memories from the completed execution (Phase 4).
+            self._extract_memories(agent, execution, used_tools)
+
             return execution
 
         except (ValidationError, NotFoundError):
@@ -315,6 +336,106 @@ class AgentRuntime:
         return (getattr(usage, "prompt_tokens", 0) or 0) / 1000.0 * prices["prompt"] + (
             getattr(usage, "completion_tokens", 0) or 0
         ) / 1000.0 * prices["completion"]
+
+    # ------------------------------------------------------------------ Memory
+
+    def _retrieve_memories(self, agent, task) -> list[dict]:
+        """Retrieve relevant memories for this agent's task (Phase 4).
+
+        Runs synchronously against the in-memory/DB session the execution is
+        using. Returns a list of lightweight dicts for context injection, and
+        records access on each retrieved memory. Failures are non-fatal: an
+        agent must still run even if memory retrieval is unavailable.
+        """
+        from app.core.config import settings
+
+        if not settings.memory_extraction_enabled:
+            return []
+        import asyncio
+
+        try:
+            return asyncio.run(self._async_retrieve_memories(agent, task))
+        except Exception:  # pragma: no cover - memory is best-effort
+            logger.warning("memory_retrieval_failed", extra={"task_id": str(task.id)})
+            return []
+
+    async def _async_retrieve_memories(self, agent, task) -> list[dict]:
+        """Async core of memory retrieval (see ``_retrieve_memories``)."""
+        from app.core.config import settings
+        from app.memory.policies import RetrievalPolicy
+        from app.memory.retrieval import HybridRetriever
+
+        db = self._executions._db
+        provider = self._resolve_embedding_provider()
+        retriever = HybridRetriever(db, embedding_provider=provider, settings=settings)
+        policy = RetrievalPolicy(
+            context_budget=settings.memory_retrieval_context_budget,
+            relevance_threshold=settings.memory_retrieval_relevance_threshold,
+            max_memories=settings.memory_retrieval_max_memories,
+        )
+        query = " ".join(part for part in [task.title, task.description] if part)
+        results = await retriever.retrieve(
+            query,
+            namespace="default",
+            owner_id=agent.id,
+            top_k=policy.max_memories,
+            min_score=policy.relevance_threshold,
+            policy=policy,
+        )
+        memory_inputs = [
+            {
+                "content": r.memory.content,
+                "type": r.memory.type.value,
+                "importance": r.memory.importance,
+                "score": r.score,
+            }
+            for r in results
+        ]
+        # Record access for the memories actually injected.
+        if memory_inputs:
+            from app.services.memory_service import MemoryService
+
+            svc = MemoryService(db, embedding_provider=provider)
+            svc.record_access_many([r.memory.id for r in results])
+        return memory_inputs
+
+    def _extract_memories(self, agent, execution: AgentExecution, used_tools: list[str]) -> None:
+        """Extract and persist memories from a completed execution (Phase 4)."""
+        from app.core.config import settings
+
+        if not settings.memory_extraction_enabled:
+            return
+        try:
+            db = self._executions._db
+            provider = self._resolve_embedding_provider()
+            from app.services.memory_service import MemoryService
+
+            svc = MemoryService(db, embedding_provider=provider)
+            # Synchronous persistence; extraction itself is async and awaited here.
+            import asyncio
+
+            asyncio.run(
+                svc.extract_and_store(
+                    execution, namespace="default", agent_id=agent.id, used_tools=used_tools
+                )
+            )
+        except Exception:  # pragma: no cover - memory is best-effort
+            logger.warning("memory_extraction_failed", extra={"execution_id": str(execution.id)})
+
+    def _resolve_embedding_provider(self):
+        """Resolve the configured embedding provider (or None) once per runtime."""
+
+        return (
+            getattr(self, "_embedding_provider_singleton", None) or self._init_embedding_provider()
+        )
+
+    def _init_embedding_provider(self):
+        from app.core.config import settings
+        from app.memory.embedding import get_embedding_provider
+
+        provider = get_embedding_provider(settings)
+        self._embedding_provider_singleton = provider
+        return provider
 
     def get_execution(self, execution_id) -> AgentExecution:
         return self._executions.get(execution_id)

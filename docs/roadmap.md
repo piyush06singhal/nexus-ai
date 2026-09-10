@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Marked items in later phases are planned, not yet built. Phase 0 (Foundation), Phase 1 (Agent Runtime), Phase 2 (Tool & Action System), and Phase 3 (Workflow Orchestration) are complete.**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Marked items in later phases are planned, not yet built. Phase 0 (Foundation), Phase 1 (Agent Runtime), Phase 2 (Tool & Action System), Phase 3 (Workflow Orchestration), Phase 4 (Memory System), and Phase 5 (Multi-Agent Orchestration) are complete.**
 
 ---
 
@@ -70,21 +70,39 @@ Set up the clean, runnable engineering foundation.
 
 **Exit criteria (met):** a multi-step workflow with condition branching, structured inter-step data, retry/timeout, and schedule/event/webhook triggers executes end-to-end, persists a full step trace, and is orchestrated durably by a DB-backed worker + scheduler that survive restarts.
 
-## Phase 4 — Memory
+## ✅ Phase 4 — Memory System *(completed)*
 
-- **Short-term** memory (conversation/context window management).
-- **Long-term** memory (persistent, searchable storage).
-- Memory retrieval integrated into the agent loop.
+- **Five memory types** (`app/db/models/memory.py`): `working` (short-term, TTL), `episodic` (past experiences), `semantic` (facts/knowledge), `procedural` (how-to patterns), and `structured` (JSON records). Enums: `MemoryStatus` (active/archived/expired), `MemoryOwnerType` (agent/system), `MemorySourceType` (execution/user_input/tool_output/imported).
+- **Single-table storage** with **namespace isolation** and **ownership** — every memory carries a `namespace` (isolation key) plus an optional `owner_id` (agent or system), with composite indexes for scoped, high-perf queries. Migration `0005_memories`.
+- **Embedding abstraction** (`app/memory/embedding.py`): an `EmbeddingProvider` protocol (`embed`, `dimensions`) with a deterministic `MockEmbeddingProvider` (for tests/local, no key) and a scaffolded `OpenAIEmbeddingProvider` (deferred). A factory (`get_embedding_provider`) returns a provider only when configured; retrieval degrades gracefully to keyword matching otherwise.
+- **Hybrid retrieval** (`app/memory/retrieval.py`) — a `HybridRetriever` scores candidates by weighted `semantic + keyword + recency + importance + confidence` (Dice-coefficient keyword overlap, exponential recency decay, cosine similarity when embeddings exist), exposing a per-result **`breakdown`** for observability. Policies (`app/memory/policies.py`) set the context budget, relevance threshold, per-type multipliers, dedup threshold, TTL, and working-memory cap.
+- **Auto-extraction from executions** (`app/memory/extraction.py`): when an agent completes a task, the runtime creates an **episodic** memory (always), a **semantic** memory (on success+output), and a **procedural** memory (when tools were used) — embedded when a provider is present.
+- **Runtime integration**: the runtime retrieves relevant memories **before** building context and injects them into the system prompt (typed + importance-labeled), then persists new memories **after** the execution completes. Both are best-effort and non-fatal. Memory access is tracked (count + timestamp).
+- **API** (`app/api/v1/endpoints/memories.py`): CRUD on `/api/v1/memories`, hybrid search (`POST /memories/search`), archive, and TTL cleanup (`POST /memories/cleanup`), backed by `MemoryService`.
+- **Config** — 15 `memory_*` settings (embedding provider/model/dims, retrieval weights, context budget, thresholds, write policy, TTL, `memory_extraction_enabled`).
+- **Frontend** (`apps/web`): a `/memories` page with namespace selector, hybrid search, type/status filter chips, agent owner filter, expandable detail (source, expiry, metadata, importance/confidence), a New-memory form, archive/delete, cleanup-expired, and pagination.
+- Comprehensive tests: embedding abstraction, policies (dedup/TTL/budget), hybrid retrieval (keyword/semantic/namespace/owner/type/min-score/breakdown), extraction (success/failure/importance/embeddings), service CRUD/lifecycle, full HTTP API, and runtime integration (auto-extraction + second-run recall).
 
-**Exit criteria:** an agent can recall prior context across sessions/tasks.
+**Exit criteria (met):** an agent can recall prior context across sessions/tasks — memories are auto-extracted from completed runs, retrieved by hybrid ranking, injected into the next run's context, and isolated by namespace/owner with working-memory TTL expiry.
 
-## Phase 5 — Multi-Agent Orchestration
+## ✅ Phase 5 — Multi-Agent Orchestration *(completed)*
 
-- Mission planning and **task decomposition**.
-- Role/agent assignment and inter-agent coordination.
-- Cross-agent coordination on top of the Phase 3 workflow engine (parallel fan-out / sub-workflows), with `execution_id` observability, retries, and failover.
+Multiple specialized agents now coordinate on a **shared objective** as a team. The engine is deterministic and provider-independent (mock providers run the whole loop with no paid API) and reuses the Agent Runtime, Tool Executor, workflow engine, and Memory from Phases 1–4.
 
-**Exit criteria:** a mission is decomposed and executed across multiple agents with full traceability.
+- **Domain (`app/db/models/orchestration.py`, migration `0006_orchestrations`)** — 7 tables: `orchestrations`, `orchestration_tasks`, `agent_assignments`, `agent_messages`, `orchestration_results`, `orchestration_context`, `agent_reviews`. Enums: `OrchestrationStatus` (created→…→completed), `OrchestrationTaskStatus`, `AssignmentStatus`, `AgentMessageType`, `ReviewVerdict`.
+- **Planner (`app/orchestration/planner.py`)** — `DeterministicPlanner`: objective → validated `ExecutionPlan` with `required_capabilities` + `dependencies`. Market/competitive objectives decompose into Research → Analysis → Fact-check (parallel) → Writer; anything else falls back to a single general task. Plan refs/cycles validated before any agent runs.
+- **Capabilities & selection (`capabilities.py`, `selector.py`)** — canonical capability keys; `resolve_agent_capabilities()` unions role-derived + tool-permission-derived capabilities; `CapabilityAgentSelector` picks the best active agent by coverage with round-robin load-spread across ties.
+- **Orchestrator engine (`orchestrator.py`)** — drives the full lifecycle; runs ready tasks in a bounded `ThreadPoolExecutor` (fresh DB session per worker) with dependency-ordered sequencing; a failed task marks only its dependents `skipped`; cancellation is state-machine-guarded. Reuses the Agent Runtime per task.
+- **Communication & context (`bus.py`, `messages.py`, `context.py`)** — DB-backed `AgentMessageBus` enforces orchestration authorization; shared facts persist to `orchestration_context` (kind + optional private agent_id) and integrate with Phase 4 Memory; each task gets only task-appropriate inputs.
+- **Aggregation (`conflicts.py`, `synthesizer.py`, `review.py`)** — `NumericConflictDetector`, `ResultSynthesizer` (attributed findings/sources/incomplete-tasks/conflicts — never invents data), `AgentReviewService` (verdicts + `max_review_iterations`).
+- **State machine (`state_machine.py`)** — explicit legal transitions for orchestration/task/assignment statuses; illegal writes raise `InvalidTransitionError`.
+- **Service + API (`orchestration_service.py`, endpoints)** — full API under `/api/v1/orchestrations`: create/list/get/delete/execute/cancel plus tasks, assignments, messages, results, context, timeline, and reviews, backed by `OrchestrationService` serializers.
+- **Workflow integration** — `WorkflowStepType.ORCHESTRATION` lets a Phase 3 workflow run an orchestration inline as one of its steps (validator requires `orchestration_id`; engine dispatches it).
+- **Frontend (`apps/web`)** — an Orchestrations nav section: a list page (objective, status, task/agent counts, progress, run/cancel, status filter, Create & run form) and a detail page (final result with attributed findings + conflicts, `ExecutionGraph`, metrics, `CollaborationView` for messages/reviews, timeline, results, shared context). Built on the shared `StatusBadge` with no new dependencies.
+- **Config** — 14 `orchestration_*` settings (max agents/tasks/parallel, duration/iterations, message/review caps, conflict threshold, memory namespace, sync/inline execution, default strategy).
+- **Tests** — 10 dedicated suites (`state_machine`, `planner`, `selector`, `bus`, `conflicts`, `synthesizer`, `review`, `execution`, `integration`, `demo`), SQLite-backed with mock providers. Includes the deterministic **AI Market Research Team** demo proving decompose → parallel team → writer → synthesized final result end-to-end.
+
+**Exit criteria (met):** an objective is decomposed into a validated task graph, each task is assigned to the best-available capability-matched agent, the team executes in parallel + dependency order over an authorized bus, results are aggregated with conflict detection and full source attribution to a synthesized final result, and the whole run is observable (tasks, messages, results, reviews, timeline) in the API and the UI. See [docs/orchestration.md](orchestration.md) for the full reference.
 
 ## Phase 6 — AI Employee OS
 
@@ -133,7 +151,7 @@ The following 22 capability areas drive the architecture. Each is designed in Ph
 | 4 | Multi-Agent Communication | 5 | Event/message bus interface via Redis pub/sub or similar |
 | 5 | Tool & Action System | 2 | Built: `app/tools/` registry + executor + `PermissionContext`; built-in tools; `tool_calls` + `agent_tool_permissions` tables |
 | 6 | Browser Automation & Computer Use | 3 | Sandbox execution interface; isolated container runtime |
-| 7 | Memory Architecture | 4 | Short-term (context window) + long-term (vector DB) store interfaces |
+| 7 | Memory Architecture | 4 | Built: `app/memory/` embedding abstraction + hybrid retriever + policies + extraction; single `memories` table (5 types, namespace isolation, ownership, TTL); runtime retrieval+injection and post-execution extraction; `/api/v1/memories` API + `/memories` UI |
 | 8 | Verification & Self-Correction | 8 | Verification hooks in agent loop; evaluation pipeline interface |
 | 9 | Failure Recovery & Resilience | 3 | Built (partial): per-step `retry_policy` gated by `idempotency`; worker `recover_stale()`; dead-letter queue + circuit breaker future |
 | 10 | Permission & Security System | 7 | RBAC model; auth middleware; policy engine interface |

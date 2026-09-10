@@ -51,6 +51,7 @@ class WorkflowStepType(StrEnum):
     TOOL_ACTION = "tool_action"
     CONDITION = "condition"
     DELAY = "delay"
+    ORCHESTRATION = "orchestration"
 
 
 class WorkflowExecutionStatus(StrEnum):

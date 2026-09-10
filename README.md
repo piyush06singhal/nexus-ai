@@ -8,7 +8,7 @@ NEXUS lets you hand a high-level business objective to a system of AI agents tha
 2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
 3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
 
-> **Status: Phase 3 (Workflow Orchestration).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow between steps, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts — all orchestrated durably with no Redis.
+> **Status: Phase 5 (Multi-Agent Orchestration).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution.
 
 ---
 
@@ -140,6 +140,86 @@ See [docs/workflows.md](docs/workflows.md) for the full workflow reference.
 
 ---
 
+## Phase 4 — Memory System
+
+NEXUS agents now have a **persistent memory**. When an agent completes a task, the runtime auto-extracts memories; on the next run, relevant ones are retrieved and injected into the agent's context — so agents recall prior work across sessions.
+
+**Five memory types** (`working`, `episodic`, `semantic`, `procedural`, `structured`) live in a single `memories` table, isolated by **namespace** and scoped by **ownership** (agent or system). Working memory expires via TTL; every memory can be active, archived, or expired.
+
+**Retrieval is hybrid** — `HybridRetriever` scores memories by weighted **semantic** (embedding cosine, when a provider is present) + **keyword** (Dice overlap) + **recency** (half-life decay) + **importance** + **confidence**, and exposes a per-result `breakdown` so you can see *why* something ranked. Embeddings are provider-independent: the bundled `MockEmbeddingProvider` is deterministic and free (works in CI), and `OpenAIEmbeddingProvider` is scaffolded for later. With no provider configured, retrieval still works via keyword matching.
+
+**The runtime integrates memory into the loop**: it retrieves relevant memories *before* building the context (injecting a `[Memory]`-labeled section into the system prompt) and extracts+persists new memories *after* execution completes. Both hooks are best-effort and never block a run. Access is tracked (count + timestamp) on everything actually injected.
+
+The **Memories** page in the UI lets you browse, hybrid-search, filter by type/status/agent, create memories manually, archive/delete, clean up expired ones, and page through large stores.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Create an active mock agent, then create + assign + execute a task
+curl -X POST localhost:8000/api/v1/agents -H 'Content-Type: application/json' \
+  -d '{"name":"analyst","role":"analyst","status":"active","provider":"mock","model_name":"mock-model",
+       "model_params":{"reply":"{\"summary\":\"Q1 done\",\"output\":{\"quarter\":\"Q1\",\"growth\":0.12}}"}'
+TASK=$(curl -X POST localhost:8000/api/v1/tasks -H 'Content-Type: application/json' \
+  -d '{"title":"Summarize Q1","input_data":{"quarter":"Q1"}}' | jq -r .id)
+curl -X POST localhost:8000/api/v1/tasks/$TASK/assign -H 'Content-Type: application/json' \
+  -d '{"agent_id":"<agent_id>"}'
+curl -X POST localhost:8000/api/v1/tasks/$TASK/execute
+
+# 2. See the auto-extracted memories for that agent (in the "default" namespace)
+curl 'localhost:8000/api/v1/memories?namespace=default'
+
+# 3. Hybrid-search them by topic
+curl -X POST localhost:8000/api/v1/memories/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"Q1 growth","namespace":"default","top_k":5}'
+```
+
+With `memory_extraction_enabled=true` (the default), executing a task automatically creates an **episodic** memory, plus **semantic** (on success+output) and **procedural** (when tools were used) memories — ready to be recalled on the next run.
+
+See [docs/memory.md](docs/memory.md) for the full memory reference.
+
+---
+
+## Phase 5 — Multi-Agent Orchestration
+
+NEXUS agents now work as **teams**. Instead of one agent per task, you state an objective and the system assembles a coordinated team to achieve it — decomposed, assigned, executed, and verified together.
+
+**The engine is deterministic and provider-independent** (`app/orchestration/`): a `DeterministicPlanner` turns an objective into a validated task graph (e.g. a market analysis decomposes into Research → Analysis → Fact-check in parallel, then Writer). A `CapabilityAgentSelector` assigns each task to the best-available active agent by **capability coverage** — role-derived and tool-permission-derived — with round-robin load spreading. An `Orchestrator` runs ready tasks in a bounded thread pool over a DB-backed, authorization-enforced **`AgentMessageBus`**, then detects conflicts and synthesizes a final result with **full source attribution** — every finding and source traced to its agent and task.
+
+- **Lifecycle state machine** — `created → planning → planned → assigning → running → synthesizing → completed`, with legal paths to `failed` / `partially_completed` / `cancelled`; illegal transitions raise rather than drift.
+- **Parallel + sequential execution** — tasks with no dependencies run concurrently; dependents run when their prerequisites complete; a failed task marks only its dependents `skipped` (independent work continues).
+- **Shared context & memory** — each task receives only the facts + prior outputs relevant to it; shared facts persist to context and Phase 4 memory.
+- **Observable** — every run exposes tasks, assignments, messages, results, reviews, and a timeline in the API and the UI.
+- **Workflows can call orchestrations** — an orchestration is a first-class workflow step type.
+- **Demo** — create four mock agents, set an objective like *"analyze the competitive market and write a report"*, and watch the research team run end to end with no API key.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Stand up four active mock agents with market-team roles
+for spec in 'researcher|researcher' 'analyst|analyst' 'fact_checker|fact_checker' 'writer|writer'; do
+  role=${spec#*|}; name=${spec%|*}
+  curl -X POST localhost:8000/api/v1/agents -H 'Content-Type: application/json' \
+    -d "{\"name\":\"$name\",\"role\":\"$role\",\"status\":\"active\",\"provider\":\"mock\",\"model_name\":\"mock-model\",\"model_params\":{\"reply\":\"{\\\"summary\\\":\\\"$name done\\\",\\\"output\\\":{\\\"key\\\":\\\"value\\\"}}\"}}"
+done
+
+# 2. Create and run an orchestration
+ORCH=$(curl -X POST localhost:8000/api/v1/orchestrations -H 'Content-Type: application/json' \
+  -d '{"objective":"analyze the competitive market and write a report"}' | jq -r .id)
+curl -X POST localhost:8000/api/v1/orchestrations/$ORCH/execute
+
+# 3. Inspect the team's work
+curl localhost:8000/api/v1/orchestrations/$ORCH/tasks
+curl localhost:8000/api/v1/orchestrations/$ORCH/timeline
+curl localhost:8000/api/v1/orchestrations/$ORCH | jq .final_result
+```
+
+With a handful of active agents in place, open the **Orchestrations** page in the UI, enter an objective, and click **Create & run** to watch the execution graph and collaboration thread populate live.
+
+See [docs/orchestration.md](docs/orchestration.md) for the full orchestration reference.
+
+---
+
 ## Quick Start
 
 The fastest way to see the whole stack running is Docker Compose:
@@ -233,9 +313,11 @@ nexus-ai/
 │   │   │   ├── core/       # config, logging, errors, redis
 │   │   │   ├── api/v1/     # versioned HTTP endpoints
 │   │   │   ├── ai/         # provider-agnostic model abstraction (incl. mock)
-│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, tools, workflows
+│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, tools, workflows, memories, orchestrations
 │   │   │   ├── schemas/    # Pydantic request/response contracts
 │   │   │   ├── services/   # persistence + runtime assembly (CRUD)
+│   │   │   ├── memory/     # embedding, retrieval, policies, extraction
+│   │   │   ├── orchestration/ # multi-agent engine: planner, selector, orchestrator, bus, synthesizer
 │   │   │   ├── runtime/    # Agent Runtime + context builder
 │   │   │   ├── tools/      # tool registry, executor, permissions, built-ins
 │   │   │   └── workflow/   # engine, conditions, validator, worker, scheduler
@@ -273,6 +355,21 @@ All configuration flows through environment variables — **no secrets or hardco
 | `API_BASE_URL`          | Frontend→backend proxy target        | `http://localhost:8000`               |
 | `WORKFLOW_WORKER_ENABLED` | Auto-start the workflow worker + scheduler in the API | `false` |
 | `WORKFLOW_EXECUTE_SYNC`   | Run `POST /workflows/{id}/execute` inline (used by tests) | `false` |
+| `MEMORY_EMBEDDING_PROVIDER` | Embedding provider for semantic retrieval (`mock`/`openai`/unset) | *(unset)* |
+| `MEMORY_RETRIEVAL_CONTEXT_BUDGET` | Max chars of memory content injected into context | `5000` |
+| `MEMORY_RETRIEVAL_RELEVANCE_THRESHOLD` | Minimum hybrid score for a memory to be retrieved | `0.3` |
+| `MEMORY_WRITE_MIN_IMPORTANCE` | Memories below this importance are not stored | `0.1` |
+| `MEMORY_WRITE_DEFAULT_TTL_HOURS` | Working-memory TTL in hours | `24` |
+| `MEMORY_EXTRACTION_ENABLED` | Auto-extract memories from completed executions | `true` |
+| `ORCHESTRATION_EXECUTE_SYNC` | Run `POST /orchestrations/{id}/execute` inline (used by tests) | `false` |
+| `ORCHESTRATION_MAX_TASKS` | Max decomposed tasks per orchestration | `50` |
+| `ORCHESTRATION_MAX_AGENTS` | Max agents participating in one orchestration | `20` |
+| `ORCHESTRATION_MAX_PARALLEL_AGENTS` | Thread-pool size for parallel task execution | `5` |
+| `ORCHESTRATION_MAX_EXECUTION_DURATION_SECONDS` | Wall-clock cap for an orchestration run | `3600` |
+| `ORCHESTRATION_MAX_MESSAGES_PER_ORCHESTRATION` | Cap on inter-agent messages per run | `500` |
+| `ORCHESTRATION_MAX_REVIEW_ITERATIONS` | Cap on review revision loops | `3` |
+| `ORCHESTRATION_CONFLICT_NUMERIC_THRESHOLD` | Relative-diff that flags a numeric conflict | `0.2` |
+| `ORCHESTRATION_MEMORY_NAMESPACE` | Memory namespace for orchestration context | `orchestration` |
 
 AI provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) are reserved for later phases and are not required now.
 
@@ -290,6 +387,8 @@ The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all 
 
 - [Architecture](docs/architecture.md) — system design, components, and key decisions.
 - [Workflows](docs/workflows.md) — the Phase 3 workflow orchestration reference (step types, conditions, triggers, worker/scheduler, API).
+- [Memory](docs/memory.md) — the Phase 4 memory system reference (memory types, hybrid retrieval, extraction, config, API).
+- [Orchestration](docs/orchestration.md) — the Phase 5 multi-agent orchestration reference (planner, selection, execution, communication bus, synthesis, review, API).
 - [Roadmap](docs/roadmap.md) — the phased plan from foundation to autonomous business engine.
 
 ---

@@ -21,15 +21,18 @@ def build_context(
     task: Task,
     *,
     tool_definitions: list[dict] | None = None,
+    memories: list[dict] | None = None,
 ) -> list[ChatMessage]:
     """Construct the messages sent to the model for ``task`` executed by ``agent``.
 
     The conversation shape is:
-        [system (agent.system_prompt + role + tools), user (task details + input)]
+        [system (agent.system_prompt + role + tools + memory), user (task details + input)]
 
     When *tool_definitions* are supplied, the system prompt includes tool
     usage instructions and the user message concludes with a structured
-    output contract that supports tool calls.
+    output contract that supports tool calls. When *memories* are supplied,
+    they are injected into the system prompt as a labeled relevance block so
+    the agent can recall prior context (Phase 4).
     """
     system_lines: list[str] = []
     if agent.role:
@@ -45,6 +48,10 @@ def build_context(
     if tool_definitions:
         tools_block = _format_tool_definitions(tool_definitions)
         system_lines.append(tools_block)
+
+    # Inject retrieved memories so the agent can recall prior context (Phase 4).
+    if memories:
+        system_lines.append(_format_memory_context(memories))
 
     system_prompt = "\n\n".join(system_lines)
 
@@ -159,3 +166,27 @@ def _format_tool_definitions(definitions: list[dict]) -> str:
 def agent_is_executable(agent) -> bool:
     """Return whether an agent is eligible to run tasks."""
     return agent.status == AgentStatus.ACTIVE and bool(agent.provider and agent.model_name)
+
+
+def _format_memory_context(memories: list[dict]) -> str:
+    """Format retrieved memories into a labeled context block for the model.
+
+    Each memory is labelled with its type and importance so the model can weigh
+    how much to trust it. The block title tells the model these are memories
+    it stored from prior executions it may use as background.
+    """
+    if not memories:
+        return ""
+    lines = [
+        "\n## Relevant Memories",
+        "The following are memories from your past work. Use them as background, "
+        "but trust the task input as the ground truth.",
+    ]
+    for item in memories:
+        memory_type = item.get("type") or "memory"
+        importance = item.get("importance") or 0.0
+        content = item.get("content") or ""
+        score = item.get("score")
+        score_note = f" (relevance {score:.2f})" if isinstance(score, (int, float)) else ""
+        lines.append(f"- [{memory_type}, importance {importance:.2f}]{score_note} {content}")
+    return "\n".join(lines)

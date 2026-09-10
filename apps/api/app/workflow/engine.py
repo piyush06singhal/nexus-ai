@@ -469,6 +469,8 @@ class WorkflowEngine:
             return self._run_agent_task_step(step, config, resolved_input, timeout)
         if step_type == WorkflowStepType.TOOL_ACTION.value:
             return self._run_tool_action_step(step, config, resolved_input, timeout)
+        if step_type == WorkflowStepType.ORCHESTRATION.value:
+            return self._run_orchestration_step(step, config, resolved_input)
 
         raise ValidationError(f"Unknown step type: {step_type!r}")
 
@@ -612,6 +614,51 @@ class WorkflowEngine:
             "result_status": result_status,
             "result_data": record.result.data,
             "result_error": record.result.error,
+        }
+
+    def _run_orchestration_step(
+        self,
+        step: WorkflowStep,
+        config: dict[str, Any],
+        resolved_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run a multi-agent orchestration step (Phase 5).
+
+        Loads the referenced orchestration and executes it inline (deterministic
+        path) via :class:`OrchestrationService`, returning the final result into
+        the workflow state for downstream steps.
+        """
+        from app.services.orchestration_service import (
+            OrchestrationService,
+            to_dict,
+        )
+
+        orchestration_id_str = config.get("orchestration_id")
+        if not orchestration_id_str:
+            raise ValidationError(
+                f"Step {step.name!r}: orchestration_id is required in configuration"
+            )
+        orchestration_id = UUID(orchestration_id_str)
+        if resolved_input:
+            upsert_id = resolved_input.get("orchestration_id")
+            if upsert_id:
+                orchestration_id = UUID(upsert_id)
+
+        service = OrchestrationService(self._db)
+        orch = service.get(orchestration_id)
+        if orch.status in ("completed", "partially_completed"):
+            # Already ran — reuse the existing result.
+            executed = orch
+        else:
+            executed = service.execute(orchestration_id)
+
+        executed = self._db.get(type(executed), orchestration_id) or executed
+        result = to_dict(executed)
+        return {
+            "orchestration_id": str(executed.id),
+            "orchestration_status": result.get("status"),
+            "final_result": result.get("final_result"),
+            "metrics": result.get("metrics"),
         }
 
     @staticmethod

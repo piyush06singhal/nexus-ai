@@ -144,6 +144,14 @@ def validate_workflow_steps(
             elif tool_name not in known_tool_names:
                 errors.append(f"Step {step.name!r} (tool_action): unknown tool {tool_name!r}")
 
+        elif step_type == WorkflowStepType.ORCHESTRATION:
+            orchestration_id = config.get("orchestration_id")
+            if not orchestration_id:
+                errors.append(
+                    f"Step {step.name!r} (orchestration): orchestration_id is "
+                    "required in configuration"
+                )
+
         elif step_type == WorkflowStepType.CONDITION:
             condition = config.get("condition")
             if not condition or not isinstance(condition, dict):

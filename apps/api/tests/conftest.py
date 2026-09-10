@@ -67,18 +67,28 @@ def degraded_client(monkeypatch):
 
 
 @pytest.fixture
-def db_engine():
-    """An in-memory SQLite engine with all NEXUS tables created."""
+def db_engine(tmp_path):
+    """A file-backed SQLite engine with all NEXUS tables created.
+
+    A normal (Queue) connection pool backed by a temp file gives every session
+    (including the parallel worker sessions spawned by the orchestration engine)
+    its own connection to the *same* database. This is what makes true parallel
+    task execution test-safe — a single Statically-pooled in-memory connection
+    would serialize a worker commit behind the request session's open
+    transaction and raise ``cannot commit transaction - SQL statements in
+    progress``.
+    """
     from sqlalchemy import create_engine
-    from sqlalchemy.pool import StaticPool
 
     import app.db.models  # noqa: F401 — ensures all ORM tables are registered.
     from app.db.session import Base
 
     engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        f"sqlite:///{tmp_path / 'test.db'}",
+        # ``timeout`` is SQLite's busy timeout (seconds): parallel worker
+        # threads write to the same file, and writers wait for the lock instead
+        # of throwing "database is locked".
+        connect_args={"check_same_thread": False, "timeout": 30},
     )
     Base.metadata.create_all(engine)
     return engine

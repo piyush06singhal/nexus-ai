@@ -1,6 +1,6 @@
 # NEXUS — System Architecture
 
-> **Phase 3 (Workflow Orchestration).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
+> **Phase 5 (Multi-Agent Orchestration).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
 
 ---
 
@@ -80,8 +80,9 @@ The engineering goal for the whole project is captured in a few principles:
 ### 3.1 Frontend (`apps/web`)
 
 - Next.js (App Router), React, Tailwind CSS, TypeScript (strict).
-- A dashboard **shell**: sidebar navigation (Dashboard, Missions, Agents, Tasks, Activity, Approvals, Settings, Tools) and a top header.
+- A dashboard **shell**: sidebar navigation (Dashboard, Missions, Agents, Tasks, Workflows, Tools, Memories, Activity, Approvals, Settings) and a top header.
 - A **Tools** page renders every registered tool definition (parameters, danger flag, timeout, tags), pulled live from `GET /api/v1/tools`.
+- A **Memories** page renders the agent memory store — namespace selector, hybrid search, type/status filter chips, an agent-owner filter, expandable detail (source trace, expiry, metadata, importance/confidence), archive/delete, cleanup-expired, and pagination. It is powered by `GET/POST /api/v1/memories`.
 - The task execution detail embeds a **tool-call inspector** (`ToolCallsSection`) that fetches `GET /api/v1/tools/calls/{execution_id}` on demand.
 - Every still-unfinished area renders a clear **placeholder** — no fake AI functionality.
 - The `SystemStatus` widget fetches `/api/v1/health` to show live backend/database/Redis status.
@@ -93,9 +94,10 @@ FastAPI application with:
 
 - **Entry point** (`app/main.py`) — app factory, lifespan hook, CORS, router mounting, exception handlers.
 - **Configuration** (`app/core/config.py`) — pydantic-settings `Settings` singleton driven by environment variables and `.env`.
-- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Models live in `app/db/models/`: `Agent`, `Task`, `AgentExecution`, `ToolCallRecord`, `AgentToolPermission`, and the Phase 3 workflow set (`Workflow`, `WorkflowStep`, `WorkflowTrigger`, `WorkflowExecution`, `StepExecution`).
+- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Models live in `app/db/models/`: `Agent`, `Task`, `AgentExecution`, `ToolCallRecord`, `AgentToolPermission`, the Phase 3 workflow set (`Workflow`, `WorkflowStep`, `WorkflowTrigger`, `WorkflowExecution`, `StepExecution`), and the Phase 4 `Memory`.
 - **Schemas** (`app/schemas/`) — Pydantic request/response contracts decoupled from the ORM, plus the `AgentResult` structured-output contract and tool/tool-call read schemas.
-- **Services** (`app/services/`) — thin persistence CRUD (`AgentService`, `TaskService`, `ExecutionService`, `ToolCallService`, `PermissionService`) and a runtime-assembly dependency (`create_runtime`) that wires the runtime to a request-scoped session.
+- **Services** (`app/services/`) — thin persistence CRUD (`AgentService`, `TaskService`, `ExecutionService`, `ToolCallService`, `PermissionService`, `MemoryService`) and a runtime-assembly dependency (`create_runtime`) that wires the runtime to a request-scoped session.
+- **Memory** (`app/memory/`) — the Phase 4 memory system (see §3.7): embedding abstraction, hybrid retriever, retrieval/write policies, and execution extraction.
 - **Tools** (`app/tools/`) — the Tool & Action system: types, registry, permission context, and executor, plus built-in tools (see §3.5).
 - **Runtime** (`app/runtime/`) — the Agent Runtime orchestrator, the context builder, and the tool-calling loop (see §3.4).
 - **API versioning** (`app/api/v1/`) — v1 endpoints mounted under `/api/v1` for agents, tasks (create/assign/execute), executions, and tools/tool-calls; additive versioning for the future.
@@ -130,13 +132,15 @@ The heart of Phase 1, extended in Phase 2 into a **tool-calling loop**. `AgentRu
 
 ```
 load agent → validate (assigned, active, provider+model) → begin execution (DB)
-  → build_context (system = role + system prompt + tool definitions;
+  → retrieve relevant memories (HybridRetriever, namespace/owner-scoped)
+  → build_context (system = role + system prompt + tool definitions + [Memory];
                    user = title + description + input JSON)
   → repeat (up to max_tool_iterations):
        provider.generate → if tool_calls: execute via ToolExecutor
          (validate → authorize → run → persist) → append results to context
        until model returns a final AgentResult
   → parse AgentResult → complete execution (DB)
+  → extract & persist memories from the execution (episodic/semantic/procedural)
 ```
 
 - **`context.py`** builds the `ChatMessage` list and a JSON-based, provider-agnostic tool-calling protocol: when tools are enabled, the system prompt includes formatted tool definitions and the user message tells the model how to request a tool (returning `{"tool_calls": [...]}`). `append_tool_results()` feeds each tool result back as an assistant + user message pair. `agent_is_executable` gates on `status == active`.
@@ -170,7 +174,37 @@ The Phase 3 coordination layer that composes agents and tools into durable, depe
 
 The worker and scheduler are **in-process daemon threads** started in the FastAPI lifespan when `workflow_worker_enabled` is true — durable, restart-safe orchestration with zero extra runtime infrastructure (no Redis).
 
-### 3.7 Infrastructure & Database
+### 3.7 Memory System (`app/memory/`)
+
+The Phase 4 persistent knowledge layer. It is provider-independent and opt-in: an embedding provider makes semantic search possible, but the system works with keyword matching alone when none is configured.
+
+- **`embedding.py`** — an `EmbeddingProvider` Protocol (`embed`, `dimensions`). `MockEmbeddingProvider` produces deterministic hash-based 128-dim vectors (tests/local, no key, so semantic search is fully exercisable). `OpenAIEmbeddingProvider` is a scaffold reserved for later phases — concrete network calls are intentionally deferred. `get_embedding_provider(settings)` returns a provider only when `memory_embedding_provider` is `"mock"` or `"openai"`, else `None` so retrieval degrades gracefully.
+- **`retrieval.py`** — `HybridRetriever.retrieve(query, *, namespace, owner_id, memory_types, top_k, min_score, include_expired, policy)` filters by namespace/owner/type/status (excluding expired), then scores each candidate by weighted **semantic** (cosine when embeddings exist) + **keyword** (Dice coefficient) + **recency** (exponential half-life decay) + **importance** + **confidence**, applies an optional per-type multiplier, and returns the top-k ranked `MemoryRetrievalResult` with a per-result **`breakdown`** for observability.
+- **`policies.py`** — `RetrievalPolicy` (context budget, relevance threshold, max memories, per-type weights) and `WritePolicy` (min importance, dedup threshold, working-memory cap, TTL); plus `is_duplicate` (embedding cosine or same-type+content) and `is_expired` (timezone-safe TTL check).
+- **`extraction.py`** — `extract_memories_from_execution` turns a completed `AgentExecution` into persistent memories: an **episodic** memory always, a **semantic** memory on success+output, a **procedural** memory when tools were used. Content, importance, and confidence are derived from the execution. Memories are embedded in bulk when a provider is present.
+- **`app/services/memory_service.py`** — `MemoryService`: CRUD, scoped listing, hybrid `search`, lifecycle (`archive`, `cleanup_expired`, `expire_working`), `record_access`/`record_access_many`, extraction, and dedup/importance gating (`_should_store`, `_find_similar`, `_prune_working`).
+- **Endpoints** (`app/api/v1/endpoints/memories.py`) — under `/api/v1/memories`: an `async` create that best-effort embeds, hybrid `POST /search`, `POST /cleanup` (TTL), CRUD, and `POST /{memory_id}/archive`. Literal `/search` and `/cleanup` routes precede the `/{memory_id}` UUID parameter.
+- **Runtime integration** — `AgentRuntime.execute_task` retrieves relevant memories **before** `build_context` (injecting a `[Memory]`-labeled section into the system prompt, scope-isolated by the agent's namespace/owner) and extracts+persists new memories **after** the execution completes. Both hooks are best-effort and never fatal — an agent runs even if memory misbehaves. Same-session DB + `asyncio.run` bridge async memory work into the synchronous runtime. Access is recorded on everything actually injected.
+- **Model / migration** — single `memories` table (`Migration 0005`) with `namespace`, `type`, `owner_type`/`owner_id`, `status`, `source_type`/`source_id`, `content`, `summary`, `metadata_json`, `embedding` (text-serialized vector), `confidence`, `importance`, `access_count`, `last_accessed_at`, `expires_at`, and timestamps, plus composite indexes for namespace-scoped queries, expiry cleanup, and recency.
+
+### 3.8 Multi-Agent Orchestration (`app/orchestration/`)
+
+The Phase 5 coordination layer that assembles **multiple specialized agents into a team** on a shared objective — the province of [docs/orchestration.md](orchestration.md).
+
+- **`planner.py`** — `DeterministicPlanner`: objective → a validated `ExecutionPlan` (task decomposition into `PlanTask`s with `required_capabilities` + `dependencies`). A market/competitive-analysis objective emits Research → Analysis → Fact-check (parallel) → Writer (deps on all three); anything else falls back to a single `general` task. Plan references/cycles are validated before any agent runs.
+- **`capabilities.py`** — canonical capability keys (`research`, `analysis`, `fact_checking`, `writing`, `data_processing`, `summarization`, `general`), role→capability map, and `resolve_agent_capabilities()` which unions role-derived capabilities with capabilities derived from the agent's granted tool permissions — no schema change on `agents`.
+- **`selector.py`** — `CapabilityAgentSelector`: task → best active agent by capability coverage (`set(required) ⊆ set(caps)`), tie-broken round-robin toward least-used, enforcing `max_agents_per_orchestration`. Raises `NoAgentAvailableError` when no agent matches (the run continues with that task failed, other tasks unaffected).
+- **`orchestrator.py`** — the engine. Drives `created → planning → planned → assigning → running → synthesizing → completed`. Runs ready tasks in a bounded `ThreadPoolExecutor` (each worker on a fresh DB session), reusing the **Agent Runtime** per task; a failed task marks only its dependents `skipped` (no blanket failure). Aggregates results, runs conflict detection, synthesizes the final result with full source attribution, and records metrics + timeline.
+- **`state_machine.py`** — explicit legal transitions for orchestration, task, and assignment statuses; any illegal write raises `InvalidTransitionError`.
+- **`bus.py`** / **`messages.py`** — `AgentMessageBus` persists every inter-agent message to `agent_messages` and **enforces orchestration authorization** (only participants can send/receive); messages carry `correlation_id` + `task_id`.
+- **`context.py`** — task-appropriate input construction (objective + shared facts/decisions + relevant prior outputs) so no task sees the whole orchestration state; persists shared facts to `orchestration_context` and integrates with Phase 4 Memory.
+- **`conflicts.py`** / **`synthesizer.py`** / **`review.py`** — `NumericConflictDetector` (relative-diff threshold), `ResultSynthesizer` (attributed findings/sources/incomplete-tasks/conflicts), `AgentReviewService` (verdicts with `max_review_iterations`).
+- **`app/services/orchestration_service.py`** — `OrchestrationService`: CRUD + lifecycle (`create`/`get`/`list`/`delete`/`execute`/`cancel`) and all read serializers (`tasks`/`assignments`/`messages`/`results`/`context`/`reviews`/`timeline`).
+- **Endpoints** (`app/api/v1/endpoints/orchestrations.py`) — full orchestration API under `/api/v1/orchestrations`, plus an **integration point** into Phase 3: `WorkflowStepType.ORCHESTRATION` lets a workflow run an orchestration inline as one of its steps.
+
+The engine is **deterministic and provider-independent** — the planner/synthesizer and mock providers drive the whole loop with no paid API — and `orchestration_execute_sync` runs executions inline (test suite), mirroring how the workflow engine is driven in tests.
+
+### 3.9 Infrastructure & Database
 
 - **Docker Compose** (root) — `postgres`, `redis`, `api`, `web` services with healthchecks and dependency ordering.
 - **PostgreSQL 16** — primary store, accessed via SQLAlchemy; migrations via Alembic.
@@ -187,6 +221,7 @@ The worker and scheduler are **in-process daemon threads** started in the FastAP
 - **API ↔ Redis:** via a lazy client; degradation is reported, never fatal.
 - **API ↔ AI providers:** always through the `ModelProvider` abstraction and registry. No endpoint depends on a concrete provider.
 - **Runtime ↔ Tools:** the runtime calls `ToolExecutor.execute(...)` (never a tool directly); the executor enforces validation, authorization, timeout, and persistence before returning a `ToolResult`. Tools never have direct access to the database or model context — only to the arguments the runtime passes.
+- **Orchestrator ↔ Agents:** the `Orchestrator` composes agents through the same Agent Runtime and the `AgentMessageBus`. Inter-agent messages are persisted, authorized to the orchestration's participants, and carry `correlation_id`/`task_id`; no agent talks to another outside this bus.
 
 ---
 
@@ -214,12 +249,16 @@ The worker and scheduler are **in-process daemon threads** started in the FastAP
 | Tool-calling protocol | JSON-shaped tool requests inside message content (`{"tool_calls": [...]}`) with results appended as assistant/user pairs | Provider-agnostic — works with the mock and any provider without tight coupling to a vendor's native tool-call schema. |
 | Tool timeouts | Per-tool `timeout_seconds` enforced via a shared `ThreadPoolExecutor` | A misbehaving tool cannot hang the model loop indefinitely. |
 | Bool defaults in Alembic | `server_default=sa.true()` for boolean columns | `1` is not valid PostgreSQL boolean SQL; `sa.true()` ports across PostgreSQL and SQLite. |
+| Orchestration engine | Deterministic planner/selector behind `Planner`/`AgentSelector` protocols; engine runs synchronously, per-task via the same Agent Runtime | Multi-agent coordination is testable with no paid API and reuses Phase 1–4 rather than duplicating them; smarter strategies plug in later. |
+| Orchestration execution | Bounded `ThreadPoolExecutor` for parallel tasks; each worker on a fresh DB session | True parallel execution in tests on SQLite without cross-thread session races; `max_concurrent_tasks=1` gives deterministic tests. |
+| Orchestration isolation | Task context is selective (facts + relevant prior outputs); message bus enforces orchestration authorization; capabilities respect tool permissions | No agent sees the whole orchestration state or another agent's private context; cross-orchestration messaging is impossible by construction. |
+| Orchestration failure | A failed task marks only its dependents `skipped`; independent tasks continue | Partial results are preserved and reported, never a blanket-fail that discards completed work. |
 
 ---
 
-## 6. Data Model (Phase 3)
+## 6. Data Model (Phases 0–5)
 
-Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runtime tables; Phase 2 added the tool tables; Phase 3 adds the workflow tables:
+Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runtime tables; Phase 2 added the tool tables; Phase 3 added the workflow tables; Phase 4 added memory; Phase 5 adds the orchestration tables:
 
 - **`agents`** — id, name (unique), role, description, `status` (draft/active/inactive), `system_prompt`, and model config (`provider`, `model_name`, `temperature`, `max_tokens`, `model_params` JSON). Only `active` agents execute tasks.
 - **`tasks`** — id, title, description, `input_data` (JSON payload for the agent), `status` (pending/queued/in_progress/completed/failed/cancelled), `assigned_agent_id` FK → agents, and timestamps including `executed_at`.
@@ -231,10 +270,18 @@ Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runti
 - **`workflow_triggers`** — id, `workflow_id` FK, `trigger_type` (schedule/event/webhook), `configuration` JSON (`cron`/`interval`/`event_name`/`webhook_secret`), `enabled` boolean, `next_run_at`. Indexed on `(next_run_at, enabled)` for the scheduler poll.
 - **`workflow_executions`** — id, `workflow_id` FK, `status` (queued/running/completed/failed/cancelled/timed_out), `trigger_type`, `input_data`/`output_data`/`error` JSON, `started_at`, `completed_at`, `duration_ms`. Indexed on `status` for the worker claim query — the **DB queue**.
 - **`step_executions`** — id, `workflow_execution_id` FK, `workflow_step_id` FK, `status` (pending/ready/running/completed/failed/skipped/cancelled/timed_out), `input_data`/`output_data`/`error` JSON, `attempt_number`, `started_at`, `completed_at`, `duration_ms`. One row per step per execution — the auditable step trace.
+- **`memories`** — id, `namespace` (isolation key), `type` (working/episodic/semantic/procedural/structured), `owner_type` (agent/system) + `owner_id` (agent FK), `status` (active/archived/expired), `source_type` (execution/user_input/tool_output/imported) + `source_id`, `content`, `summary`, `metadata_json`, `embedding` (text-serialized vector), `confidence`, `importance`, `access_count`, `last_accessed_at`, `expires_at`, and timestamps. Composite indexes cover `(namespace, owner_id)`, `(namespace, type)`, `(namespace, status)`, `(namespace, created_at)`, and `(expires_at, status)` for TTL cleanup. Tool-generated memories trace back to their source execution via `source_id`.
+- **`orchestrations`** — id, `objective`, `status` (created/planning/planned/assigning/running/synthesizing/completed/partially_completed/failed/cancelled), `strategy`, `selected_agents` JSON, `execution_graph` JSON, `final_result` JSON, `error`, `metrics` JSON, `started_at`, `completed_at`, `duration_ms`. Indexed on `(status)` and `(created_at)`. Migration `0006_orchestrations`.
+- **`orchestration_tasks`** — id, `orchestration_id` FK, `name`, `description`, `required_capabilities` JSON, `dependencies` JSON, `status` (pending/ready/running/completed/failed/skipped/cancelled), `agent_id`, `input_context`/`output_data`/`error` JSON, `result_summary`, `attempt_number`, timing. Indexed on `(orchestration_id, status)` and `(agent_id)`.
+- **`agent_assignments`** — id, `orchestration_id` FK, `task_id` FK, `agent_id`, `role`, `instructions`, `priority`, `dependencies` JSON, `status` (pending/assigned/running/completed/failed/cancelled/timed_out), `input_context`/`output_data`/`error` JSON, `attempt_number`, `agent_execution_id` (link to the Phase 1 execution record).
+- **`agent_messages`** — id, `orchestration_id` FK, `sender_agent_id`/`recipient_agent_id` (nullable), `message_type` (task_assignment/task_result/request_information/information_response/status_update/error/review_request/review_result), `content`, `metadata` JSON, `correlation_id` (request↔response threading), `task_id`, `created_at`. Indexed on `(orchestration_id, created_at)` and `correlation_id`.
+- **`orchestration_results`** — id, `orchestration_id` FK, `task_id`, `assignment_id`, `agent_id`, `content`, `structured_data` JSON, `confidence`, `metadata` JSON, `created_at`. One per agent task output, aggregated by the synthesizer.
+- **`orchestration_context`** — id, `orchestration_id` FK, `key`, `value` JSON, `kind` (shared_fact/decision/constraint/intermediate_result), `agent_id` (nullable — private when set), `created_at`/`updated_at`. The selective shared-context store.
+- **`agent_reviews`** — id, `orchestration_id` FK, `task_id`, `reviewer_agent_id`, `reviewee_agent_id`, `request_content`/`response_content`, `verdict` (pending/approved/rejected/request_revision), `iteration`, `created_at`/`completed_at`.
 
-Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
+Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`, `episodic`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
 
-Planned for later phases (not yet created): `users`, `organizations`, `missions`, `memories`, `approvals`, `evaluations`.
+Planned for later phases (not yet created): `users`, `organizations`, `missions`, `approvals`, `evaluations`.
 
 These arrive incrementally; none are created prematurely.
 
@@ -262,11 +309,11 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 - **Design accommodation:** `app/runtime/` implements a single deterministic execution pipeline (`validate → build_context → execute → parse → persist`) consuming a resolved `ModelProvider`. `AgentExecution` records token usage, cost, latency, and errors, so every run is typed and traced. The `MockProvider` is registered in the registry for keyless local/CI execution.
 - **Interface points:** `AgentRuntime.execute_task()`, `build_context()`, the `ModelProvider` Protocol + registry, and the `AgentResult` schema. A reasoning *loop* (multi-step `generate → act → repeat` with tools) is future work (Phase 2+); Phase 1 executes a single task end-to-end.
 
-### 7.4 Multi-Agent Communication
+### 7.4 Multi-Agent Orchestration
 
-- **Phase:** 4 (Multi-Agent Orchestration)
-- **Design accommodation:** Redis pub/sub or a dedicated message bus. The existing `get_redis_client()` in `app/core/redis.py` establishes the connection pattern. Agent-to-agent messages will use an event schema with `execution_id` propagation.
-- **Interface points:** `EventBus.publish()`, `EventBus.subscribe()`. Events carry `execution_id` for tracing.
+- **Phase:** 5 (Multi-Agent Orchestration) — *built*
+- **Design accommodation:** `app/orchestration/` builds on the Phase 3 workflow engine and Phase 4 memory. A `DeterministicPlanner` decomposes an objective into capability-tagged tasks; a `CapabilityAgentSelector` assigns them; an `Orchestrator` runs them in parallel + dependency order over a DB-backed `AgentMessageBus`, aggregates results, detects conflicts, and synthesizes an attributed final result. Workflows reuse an orchestration as a step type; shared facts persist via Phase 4 memory.
+- **Interface points:** `Planner.create_plan()`, `AgentSelector.select()`, `Orchestrator.execute()`, `AgentMessageBus.send/receive()`, `OrchestrationService` (CRUD/lifecycle), `ConflictDetector.detect()`, `ResultSynthesizer.synthesize()`, and the `/api/v1/orchestrations` endpoints. See [docs/orchestration.md](orchestration.md).
 
 ### 7.5 Tool & Action System
 
@@ -282,9 +329,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.7 Memory Architecture
 
-- **Phase:** 3 (Memory)
-- **Design accommodation:** Short-term memory (context window management) and long-term memory (vector DB or structured store). The `ModelResponse.usage` field already tracks token consumption, which drives context window decisions.
-- **Interface points:** `MemoryStore.store()`, `MemoryStore.retrieve()`, `MemoryStore.search()`.
+- **Phase:** 4 (Memory System) — *built*
+- **Design accommodation:** A provider-independent memory system in `app/memory/`: an `EmbeddingProvider` abstraction (mock in tests, OpenAI scaffold reserved), a `HybridRetriever` that scores memories by weighted semantic + keyword + recency + importance + confidence, `RetrievalPolicy`/`WritePolicy` for budgets/thresholds/TTL/dedup, and `extract_memories_from_execution` that auto-mines episodic/semantic/procedural memories from completed runs. Stored in a single `memories` table with 5 types, namespace isolation, ownership, and TTL expiry. The runtime retrieves relevant memories before building context and persists new ones after execution — both best-effort. A per-result `breakdown` keeps ranking observable.
+- **Interface points:** `EmbeddingProvider.embed()`, `HybridRetriever.retrieve()`, `RetrievalPolicy`/`WritePolicy`, `extract_memories_from_execution()`, `MemoryService.search/archive/cleanup_expired`, and `/api/v1/memories*`. A full vector index (e.g. pgvector) can replace the Python cosine path later without changing callers.
 
 ### 7.8 Verification & Self-Correction
 
@@ -383,8 +430,8 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 - **Phase 1+ (Agent Runtime):** real provider adapters (OpenAI, Anthropic, Gemini, local); structured outputs.
 - **Phase 2+ (Tool & Action System):** a richer tool set (web fetch/HTTP, file/shell in a sandbox, browser automation), per-agent permission management UI + endpoint, and vendor-native tool-call schema adoption for real providers.
 - **Phase 3+ (Workflow Orchestration):** a visual workflow editor, venue triggers/webhook guards, and richer step types (sub-workflow, parallel fan-out — the sequential engine already returns execution state in dependency order).
-- **Memory:** short-term (context/conversation) and long-term (vector/searchable) stores.
-- **Multi-agent orchestration:** mission decomposition, role assignment, coordination, failover (workflows already reuse a DB-backed queue + worker with per-execution observability).
+- **Memory:** a real embedding provider (OpenAI scaffold is reserved), a native vector index (pgvector) at scale, richer memory types (structured entities/relations), and working/conversation-scope memory management.
+- **Multi-agent orchestration:** a distributed worker + scheduler (currently runs inline/synchronously), an LLM-driven planner/selector behind the existing protocols, richer planning templates, semantic (non-numeric) conflict resolution, and scale-out of the seven-table orchestration model.
 - **Approvals & RBAC:** human-in-the-loop gates for sensitive side effects.
 
 See [roadmap.md](roadmap.md) for the full phased plan.

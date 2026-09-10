@@ -1,8 +1,26 @@
 import type {
   Agent,
+  AgentAssignment,
   AgentExecution,
   AgentInput,
+  AgentMessage,
+  AgentReview,
   HealthResponse,
+  Memory,
+  MemoryListResponse,
+  MemorySearchResult,
+  MemoryStatus,
+  MemoryType,
+  Orchestration,
+  OrchestrationContextEntry,
+  OrchestrationInput,
+  OrchestrationListResponse,
+  OrchestrationResult,
+  OrchestrationStatus,
+  OrchestrationTask,
+  OrchestrationTimelineEvent,
+  ReviewCompleteInput,
+  ReviewInput,
   StepExecution,
   Task,
   Workflow,
@@ -287,5 +305,204 @@ export function cancelWorkflowExecution(
   return apiFetch<WorkflowExecution>(
     apiUrl(`/workflows/executions/${executionId}/cancel`),
     { method: "POST" },
+  );
+}
+
+// --- Memory (Phase 4) ---
+
+export function fetchMemories(params: {
+  namespace: string;
+  owner_id?: string;
+  type?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<MemoryListResponse> {
+  const sp = new URLSearchParams({ namespace: params.namespace });
+  if (params.owner_id) sp.set("owner_id", params.owner_id);
+  if (params.type) sp.set("type", params.type);
+  if (params.status) sp.set("status", params.status);
+  if (params.limit) sp.set("limit", String(params.limit));
+  if (params.offset) sp.set("offset", String(params.offset));
+  return apiFetch<MemoryListResponse>(apiUrl(`/memories?${sp.toString()}`));
+}
+
+export function createMemory(input: {
+  namespace: string;
+  type: MemoryType;
+  content: string;
+  summary?: string;
+  importance?: number;
+  confidence?: number;
+}): Promise<Memory> {
+  return apiFetch<Memory>(apiUrl("/memories"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getMemory(id: string): Promise<Memory> {
+  return apiFetch<Memory>(apiUrl(`/memories/${id}`));
+}
+
+export function updateMemory(
+  id: string,
+  input: Partial<{
+    content: string;
+    summary: string;
+    status: MemoryStatus;
+    importance: number;
+    confidence: number;
+  }>,
+): Promise<Memory> {
+  return apiFetch<Memory>(apiUrl(`/memories/${id}`), {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteMemory(id: string): Promise<void> {
+  return apiFetch<void>(apiUrl(`/memories/${id}`), { method: "DELETE" });
+}
+
+export function searchMemories(input: {
+  query: string;
+  namespace: string;
+  owner_id?: string;
+  memory_types?: MemoryType[];
+  top_k?: number;
+  min_score?: number;
+}): Promise<MemorySearchResult[]> {
+  return apiFetch<MemorySearchResult[]>(
+    apiUrl("/memories/search"),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function archiveMemory(id: string): Promise<Memory> {
+  return apiFetch<Memory>(apiUrl(`/memories/${id}/archive`), {
+    method: "POST",
+  });
+}
+
+export function cleanupExpiredMemories(): Promise<{
+  expired_count: number;
+}> {
+  return apiFetch<{ expired_count: number }>(apiUrl("/memories/cleanup"), {
+    method: "POST",
+  });
+}
+
+// --- Orchestrations (Phase 5) ---
+
+export function fetchOrchestrations(input?: {
+  status?: OrchestrationStatus;
+  limit?: number;
+  offset?: number;
+}): Promise<OrchestrationListResponse> {
+  const sp = new URLSearchParams();
+  if (input?.status) sp.set("status", input.status);
+  if (input?.limit) sp.set("limit", String(input.limit));
+  if (input?.offset) sp.set("offset", String(input.offset));
+  const query = sp.toString();
+  return apiFetch<OrchestrationListResponse>(
+    apiUrl(`/orchestrations${query ? `?${query}` : ""}`),
+  );
+}
+
+export function createOrchestration(
+  input: OrchestrationInput,
+): Promise<Orchestration> {
+  return apiFetch<Orchestration>(apiUrl("/orchestrations"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getOrchestration(id: string): Promise<Orchestration> {
+  return apiFetch<Orchestration>(apiUrl(`/orchestrations/${id}`));
+}
+
+export function executeOrchestration(id: string): Promise<Orchestration> {
+  return apiFetch<Orchestration>(apiUrl(`/orchestrations/${id}/execute`), {
+    method: "POST",
+  });
+}
+
+export function cancelOrchestration(id: string): Promise<Orchestration> {
+  return apiFetch<Orchestration>(apiUrl(`/orchestrations/${id}/cancel`), {
+    method: "POST",
+  });
+}
+
+export function fetchOrchestrationTasks(
+  id: string,
+): Promise<OrchestrationTask[]> {
+  return apiFetch<OrchestrationTask[]>(apiUrl(`/orchestrations/${id}/tasks`));
+}
+
+export function fetchOrchestrationAgents(
+  id: string,
+): Promise<AgentAssignment[]> {
+  return apiFetch<AgentAssignment[]>(
+    apiUrl(`/orchestrations/${id}/assignments`),
+  );
+}
+
+export function fetchOrchestrationMessages(
+  id: string,
+): Promise<AgentMessage[]> {
+  return apiFetch<AgentMessage[]>(apiUrl(`/orchestrations/${id}/messages`));
+}
+
+export function fetchOrchestrationResults(
+  id: string,
+): Promise<OrchestrationResult[]> {
+  return apiFetch<OrchestrationResult[]>(apiUrl(`/orchestrations/${id}/results`));
+}
+
+export function fetchOrchestrationContext(
+  id: string,
+): Promise<OrchestrationContextEntry[]> {
+  return apiFetch<OrchestrationContextEntry[]>(
+    apiUrl(`/orchestrations/${id}/context`),
+  );
+}
+
+export function fetchOrchestrationReviews(
+  id: string,
+): Promise<AgentReview[]> {
+  return apiFetch<AgentReview[]>(apiUrl(`/orchestrations/${id}/reviews`));
+}
+
+export function fetchOrchestrationTimeline(
+  id: string,
+): Promise<OrchestrationTimelineEvent[]> {
+  return apiFetch<OrchestrationTimelineEvent[]>(
+    apiUrl(`/orchestrations/${id}/timeline`),
+  );
+}
+
+export function createOrchestrationReview(
+  id: string,
+  input: ReviewInput,
+): Promise<AgentReview> {
+  return apiFetch<AgentReview>(apiUrl(`/orchestrations/${id}/reviews`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function completeOrchestrationReview(
+  orchestrationId: string,
+  reviewId: string,
+  input: ReviewCompleteInput,
+): Promise<AgentReview> {
+  return apiFetch<AgentReview>(
+    apiUrl(`/orchestrations/${orchestrationId}/reviews/${reviewId}/complete`),
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
   );
 }
