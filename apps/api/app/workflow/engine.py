@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.db.models.agent import Agent
+from app.db.models.employee import AIEmployee
 from app.db.models.workflow import (
     IdempotencyTag,
     StepExecution,
@@ -391,7 +392,14 @@ class WorkflowEngine:
         state: WorkflowState,
         resolved_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Run a step, retrying if the retry_policy allows."""
+        """Run a step, retrying if the retry_policy allows.
+
+        After a step produces output, if the step declares a ``verification_policy``
+        (Phase 6, §26), the output is verified.  A verification outcome below the
+        policy's ``minimum_score`` is treated as a step failure so the existing
+        retry/branching logic applies — without duplicating any engine logic (the
+        engine only calls :class:`VerificationService`).
+        """
         retry_policy = _loads(step.retry_policy) or {}
         max_attempts = retry_policy.get("max_attempts", 1)
 
@@ -406,6 +414,8 @@ class WorkflowEngine:
         if not safe_to_retry:
             max_attempts = 1
 
+        policy_cfg = _loads(step.verification_policy) or {}
+
         delay_base = retry_policy.get("delay", 0)  # seconds
         retry_on_errors = retry_policy.get("retry_on", [])
 
@@ -414,6 +424,10 @@ class WorkflowEngine:
             self._update_step_execution(se, attempt_number=attempt)
             try:
                 output = self._run_step(step, state, resolved_input)
+                # Optional verification (Phase 6, §26) — runs after a successful
+                # step only; a below-threshold verdict fails the step.
+                if policy_cfg:
+                    self._verify_step(step, se, output, policy_cfg)
                 return output
             except ExecutionCancelledError:
                 raise
@@ -443,6 +457,52 @@ class WorkflowEngine:
         # Should never reach here, but defensive:
         raise StepFailedError(f"Step {step.name!r} failed: {last_error}")
 
+    def _verify_step(
+        self,
+        step: WorkflowStep,
+        se: StepExecution,
+        output: dict[str, Any],
+        policy_cfg: dict[str, Any],
+    ) -> None:
+        """Verify a step's output against its ``verification_policy`` (§26).
+
+        The engine only calls :class:`VerificationService` — it never re-implements
+        verification.  A verdict below ``minimum_score`` (or FAIL/UNCERTAIN unless
+        the policy permits) fails the step so the caller's retry handling applies.
+        The resulting run id is recorded on the :class:`StepExecution`.
+        """
+        from app.verification.policy import VerificationPolicy
+        from app.verification.service import VerificationService
+
+        try:
+            policy = VerificationPolicy.from_dict(policy_cfg)
+        except ValueError as exc:
+            raise WorkflowEngineError(
+                f"Step {step.name!r}: invalid verification_policy: {exc}"
+            ) from exc
+        if not policy.required:
+            return
+
+        result = VerificationService(self._db).verify(
+            output,
+            policy=policy,
+            workflow_id=step.workflow_id,
+            context={"criteria": policy_cfg.get("criteria", [])},
+            risk_level=policy_cfg.get("risk_level", "high"),
+        )
+        se.verification_run_id = result.run_id
+        self._db.commit()
+
+        below_min = result.score is not None and result.score < policy.minimum_score
+        if result.status.value == "fail" or result.status.value == "uncertain":
+            reason = result.reason or "verification failed"
+            raise StepFailedError(f"Step {step.name!r} failed verification: {reason}")
+        if below_min and policy.minimum_score is not None:
+            raise StepFailedError(
+                f"Step {step.name!r} verification score {result.score:.2f} "
+                f"below minimum {policy.minimum_score}"
+            )
+
     def _run_step(
         self,
         step: WorkflowStep,
@@ -471,6 +531,8 @@ class WorkflowEngine:
             return self._run_tool_action_step(step, config, resolved_input, timeout)
         if step_type == WorkflowStepType.ORCHESTRATION.value:
             return self._run_orchestration_step(step, config, resolved_input)
+        if step_type == WorkflowStepType.EMPLOYEE_TASK.value:
+            return self._run_employee_task_step(step, config, resolved_input, timeout)
 
         raise ValidationError(f"Unknown step type: {step_type!r}")
 
@@ -659,6 +721,85 @@ class WorkflowEngine:
             "orchestration_status": result.get("status"),
             "final_result": result.get("final_result"),
             "metrics": result.get("metrics"),
+        }
+
+    def _run_employee_task_step(
+        self,
+        step: WorkflowStep,
+        config: dict[str, Any],
+        resolved_input: dict[str, Any],
+        timeout: int | None,
+    ) -> dict[str, Any]:
+        """Run a task via an AI Employee.
+
+        Resolves the employee, builds context, and delegates to the employee's
+        underlying agent via AgentRuntime.  Config::
+
+            {
+                "employee_id": "<uuid>",
+                "task_title": "optional override",
+                "task_description": "optional override",
+                "input_mapping": {...}
+            }
+        """
+        employee_id_str = config.get("employee_id")
+        if not employee_id_str:
+            raise ValidationError(f"Step {step.name!r}: employee_id is required in configuration")
+        employee_id = UUID(employee_id_str)
+
+        emp = self._db.get(AIEmployee, employee_id)
+        if emp is None:
+            raise NotFoundError(f"Employee {employee_id_str!r} not found for step {step.name!r}")
+
+        # Build employee context.
+        from app.employee.context import EmployeeContextBuilder
+
+        ctx_builder = EmployeeContextBuilder(self._db)
+        task_desc = config.get("task_description", step.name)
+        employee_ctx = ctx_builder.build_context(employee_id, task_description=task_desc)
+
+        # Resolve the underlying agent for execution.
+        agent_id = emp.agent_id
+        if agent_id is None:
+            raise ValidationError(f"Employee {emp.name!r} has no agent_id; cannot execute")
+
+        agent = self._db.get(Agent, agent_id)
+        if agent is None:
+            raise NotFoundError(f"Agent {agent_id!r} for employee {emp.name!r} not found")
+
+        # Create a task for the runtime.
+        task_svc = TaskService(self._db)
+        task_title = config.get("task_title", f"employee:{emp.name}:{step.name}")
+        task = task_svc.create(
+            TaskCreate(
+                title=task_title,
+                input_data=resolved_input or None,
+                assigned_agent_id=agent_id,
+            )
+        )
+        task_svc.assign(task.id, agent_id)
+
+        # Execute via the runtime.
+        runtime = AgentRuntime(
+            agent_service=AgentService(self._db),
+            task_service=task_svc,
+            execution_service=ExecutionService(self._db),
+        )
+        execution = runtime.execute_task(task.id)
+
+        # Extract the agent's output.
+        output_data = _loads(execution.output_data)
+        if output_data is None:
+            output_data = {}
+
+        return {
+            "employee_id": str(employee_id),
+            "employee_name": emp.name,
+            "agent_execution_id": str(execution.id),
+            "employee_context": employee_ctx,
+            "summary": output_data.get("summary", ""),
+            "output": output_data.get("output", {}),
+            "confidence": output_data.get("confidence"),
         }
 
     @staticmethod

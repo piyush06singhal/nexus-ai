@@ -20,6 +20,7 @@ from app.db.models.execution import AgentExecution
 from app.db.models.memory import (
     Memory,
     MemoryOwnerType,
+    MemorySourceType,
     MemoryStatus,
     MemoryType,
 )
@@ -215,6 +216,73 @@ class MemoryService:
         if expired:
             self._db.commit()
         return len(expired)
+
+    # ----------------------------------------------------- Reliability hooks
+
+    def store_reliability_memory(
+        self,
+        *,
+        namespace: str,
+        kind: str,
+        content: str,
+        owner_id: UUID | None = None,
+        source_id: UUID | None = None,
+        importance: float = 0.5,
+        metadata_json: dict | None = None,
+    ) -> Memory | None:
+        """Store zero-or-one semantic/procedural memory from a reliability event.
+
+        Called by the verification/recovery pipeline (Phase 6, §28) so each PASS
+        stores one verified-fact memory and each repeated-failure stores one
+        failure-pattern / recovered-strategy memory.  Dedups against an existing
+        active memory with the same (namespace, kind, owner) so we only keep the
+        latest and never flood the store on every execution.
+
+        Args:
+            namespace: Memory namespace (e.g. ``"nexus"`` or an owner scope).
+            kind: ``"verified_fact"`` for a PASS or ``"recovery_pattern"`` for a
+                successful recovery after repeated failure.
+            content: The memory content.
+            owner_id: Owning agent id, if any.
+            source_id: Related execution/task id for traceability.
+            importance: Relative importance (0..1).
+            metadata_json: Structured evidence (verification/recovery context).
+
+        Returns:
+            The new :class:`Memory`, or ``None`` if a duplicate was skipped.
+        """
+        # Dedup: skip if an active memory already covers the same kind+content.
+        stmt = select(Memory).where(
+            Memory.namespace == namespace,
+            Memory.type.in_((MemoryType.SEMANTIC, MemoryType.PROCEDURAL)),
+            Memory.status == MemoryStatus.ACTIVE,
+        )
+        if owner_id is not None:
+            stmt = stmt.where(Memory.owner_id == owner_id)
+        for existing in list(self._db.scalars(stmt).all()):
+            if existing.content == content:
+                return None
+
+        mtype = MemoryType.PROCEDURAL if kind == "recovery_pattern" else MemoryType.SEMANTIC
+        memory = Memory(
+            namespace=namespace,
+            type=mtype,
+            owner_type=MemoryOwnerType.AGENT if owner_id else MemoryOwnerType.SYSTEM,
+            owner_id=owner_id,
+            status=MemoryStatus.ACTIVE,
+            source_type=MemorySourceType.EXECUTION if source_id else None,
+            source_id=source_id,
+            content=content,
+            summary=("Verified fact: " if kind != "recovery_pattern" else "Recovery pattern: ")
+            + content[:240],
+            confidence=1.0,
+            importance=importance,
+            metadata_json=_dumps({**(metadata_json or {}), "reliability": True}),
+        )
+        self._db.add(memory)
+        self._db.commit()
+        self._db.refresh(memory)
+        return memory
 
     # ------------------------------------------------------------- Extraction
 

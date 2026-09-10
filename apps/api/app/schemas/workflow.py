@@ -74,6 +74,7 @@ class WorkflowStepCreate(BaseModel):
     timeout_seconds: int | None = Field(default=None, gt=0)
     retry_policy: dict[str, Any] | None = None
     idempotency: IdempotencyTag = IdempotencyTag.NON_IDEMPOTENT
+    verification_policy: dict[str, Any] | None = None
 
 
 class WorkflowStepUpdate(BaseModel):
@@ -88,6 +89,7 @@ class WorkflowStepUpdate(BaseModel):
     timeout_seconds: int | None = Field(default=None, gt=0)
     retry_policy: dict[str, Any] | None = None
     idempotency: IdempotencyTag | None = None
+    verification_policy: dict[str, Any] | None = None
 
 
 class WorkflowStepRead(BaseModel):
@@ -104,6 +106,7 @@ class WorkflowStepRead(BaseModel):
     timeout_seconds: int | None = None
     retry_policy: dict[str, Any] | None = None
     idempotency: IdempotencyTag
+    verification_policy: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -173,6 +176,7 @@ class StepExecutionRead(BaseModel):
     completed_at: datetime | None = None
     duration_ms: int | None = None
     attempt_number: int
+    verification_run_id: UUID | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

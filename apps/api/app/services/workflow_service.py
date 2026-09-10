@@ -79,6 +79,7 @@ def step_to_dict(step: WorkflowStep) -> dict:
         "timeout_seconds": step.timeout_seconds,
         "retry_policy": _loads(step.retry_policy),
         "idempotency": step.idempotency.value,
+        "verification_policy": _loads(step.verification_policy),
         "created_at": step.created_at,
         "updated_at": step.updated_at,
     }
@@ -126,6 +127,7 @@ def step_execution_to_dict(se: StepExecution) -> dict:
         "completed_at": se.completed_at,
         "duration_ms": se.duration_ms,
         "attempt_number": se.attempt_number,
+        "verification_run_id": str(se.verification_run_id) if se.verification_run_id else None,
         "created_at": se.created_at,
     }
 
@@ -260,6 +262,7 @@ class WorkflowService:
             timeout_seconds=payload.timeout_seconds,
             retry_policy=_dumps(payload.retry_policy),
             idempotency=payload.idempotency,
+            verification_policy=_dumps(payload.verification_policy),
         )
         self._db.add(step)
         self._db.commit()
@@ -279,6 +282,8 @@ class WorkflowService:
             changes["dependencies"] = json.dumps(deps) if deps else None
         if "retry_policy" in changes:
             changes["retry_policy"] = _dumps(changes["retry_policy"])
+        if "verification_policy" in changes:
+            changes["verification_policy"] = _dumps(changes["verification_policy"])
         for field, value in changes.items():
             setattr(step, field, value)
         self._db.commit()

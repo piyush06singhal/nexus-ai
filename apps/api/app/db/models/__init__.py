@@ -6,6 +6,17 @@ Import every model here so that SQLAlchemy's metadata and Alembic's
 
 from app.db.models.agent import Agent, AgentStatus
 from app.db.models.agent_tool_permission import AgentToolPermission
+from app.db.models.employee import (
+    AIEmployee,
+    EmployeeAuditLog,
+    EmployeeAvailability,
+    EmployeeBudget,
+    EmployeeGoal,
+    EmployeeReview,
+    EmployeeStatus,
+    EmployeeTemplate,
+    GoalStatus,
+)
 from app.db.models.execution import AgentExecution, ExecutionStatus
 from app.db.models.memory import (
     Memory,
@@ -28,6 +39,25 @@ from app.db.models.orchestration import (
     OrchestrationTaskStatus,
     ReviewVerdict,
 )
+from app.db.models.reliability import (
+    Escalation,
+    EscalationState,
+    Evaluation,
+    EvaluationCase,
+    EvaluationMetric,
+    EvaluationResult,
+    EvaluationRun,
+    FailureCategory,
+    FailureDiagnosis,
+    FailureSeverity,
+    RecoveryAttempt,
+    RecoveryPlan,
+    RecoveryState,
+    VerificationPolicy,
+    VerificationResult,
+    VerificationRun,
+    VerificationStatus,
+)
 from app.db.models.task import Task, TaskStatus
 from app.db.models.tool_call import ToolCallRecord, ToolCallStatus
 from app.db.models.workflow import (
@@ -48,6 +78,15 @@ __all__ = [
     "Agent",
     "AgentStatus",
     "AgentToolPermission",
+    "AIEmployee",
+    "EmployeeStatus",
+    "EmployeeAvailability",
+    "EmployeeGoal",
+    "EmployeeBudget",
+    "EmployeeReview",
+    "EmployeeTemplate",
+    "EmployeeAuditLog",
+    "GoalStatus",
     "Task",
     "TaskStatus",
     "AgentExecution",
@@ -82,4 +121,21 @@ __all__ = [
     "OrchestrationContext",
     "AgentReview",
     "ReviewVerdict",
+    "VerificationStatus",
+    "VerificationPolicy",
+    "VerificationRun",
+    "VerificationResult",
+    "FailureCategory",
+    "FailureSeverity",
+    "FailureDiagnosis",
+    "RecoveryPlan",
+    "RecoveryAttempt",
+    "RecoveryState",
+    "Escalation",
+    "EscalationState",
+    "Evaluation",
+    "EvaluationRun",
+    "EvaluationCase",
+    "EvaluationResult",
+    "EvaluationMetric",
 ]

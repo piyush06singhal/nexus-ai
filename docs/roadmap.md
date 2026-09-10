@@ -104,15 +104,41 @@ Multiple specialized agents now coordinate on a **shared objective** as a team. 
 
 **Exit criteria (met):** an objective is decomposed into a validated task graph, each task is assigned to the best-available capability-matched agent, the team executes in parallel + dependency order over an authorized bus, results are aggregated with conflict detection and full source attribution to a synthesized final result, and the whole run is observable (tasks, messages, results, reviews, timeline) in the API and the UI. See [docs/orchestration.md](orchestration.md) for the full reference.
 
-## Phase 6 — AI Employee OS
+## ✅ Phase 6 — Verification, Recovery & Evaluation *(completed)*
 
-- Activity feed and live agent telemetry.
-- Approvals workflow (human-in-the-loop gates for sensitive actions).
-- Audit trail / observability surface (execution, tool-call, latency, cost records).
+NEXUS no longer assumes a successful execution means a successful outcome. A shared verification abstraction, a bounded self-healing recovery engine, and an evaluation framework now measure and enforce correctness. The previously roadmapped "AI Employee OS" is **deferred** (not cancelled) to a later, separate phase.
 
-**Exit criteria:** every agent action is observable and gated where required.
+- **Verification (`app/verification/`, migration `0007` + `0008`)** — a single reusable layer shared by the Agent-loop hooks, Workflow Engine, and Orchestrator. `VerificationService` runs policies in order, aggregates to one `VerificationResult` (score, confidence, status PASS/FAIL/PARTIAL/UNCERTAIN/SKIPPED), and persists every run/result. Six strategies: `deterministic`, `schema`, `rules` (safe non-executable operator vocabulary), `tool` (re-runs through the same permission context — never bypasses rights), `model` (provider-independent evaluator, concise evidence only, never treated as truth), and `independent_agent` (a capability-distinct verifier, unbiased minimal context).
+- **Recovery (`app/recovery/`)** — `RecoveryEngine` drives a state machine (`detected → classified → planned → recovering → (retry/backoff/modified-input/replan/fallback) → reverified → recovered`). Ten strategies incl. `abort`, `escalate`, `skip`, `partial_completion`. Safety-first: recovery never broadens permissions (§45), retry is gated by Phase-3 idempotency via `RetrySafety` (§47), and a `BudgetTracker` bounds attempts (§48) — never `while not success: retry()`. Escalations land in a persistent `escalations` table; an escalation can never be approved by the agent itself.
+- **Evaluation (`app/evaluation/`)** — named metrics (`task_success_rate`, `recovery_success_rate`, `verification_pass_rate`, `intervention_rate`, `efficiency`, …), a deterministic 8-case dataset, a `runner` that persists runs/results/metrics, `compare_runs`, and `RegressionDetector` (no auto-rollback). Provider-independent, sync-inline.
+- **Integration** — phase-specific verification in the Workflow Engine (`_run_step`) and Orchestrator (`_run_task`/`_synthesize`); memory hooks store verified facts and recovery patterns (`store_reliability_memory`).
+- **API (`/api/v1`)** — `/verifications`, `/recoveries`, `/escalations` (approve/reject), `/evaluations` (+ runs, compare, regression). Frontend has Verifications, Recoveries, Evaluations, and Escalations dashboards.
+- **Tests** — **55 new** dedicated suites: 6 verification strategies, policies/aggregation/risk-gating; taxonomy/diagnosis/retry/backoff/modified-input/replan/fallback/partial/escalation/abort/limits; safety (permission preservation, budget exhaustion, no privilege escalation); evaluation metrics/persistence/comparison/regression; integration (Agent→Execution→Verify→Fail→Recover→Re-verify; Workflow→Verify→Fail→Recover→Continue; Orchestration→Verify→Fallback→Synthesis); plus two deterministic demos (Self-Healing Workflow, Multi-Agent Verification).
 
-## Phase 7 — AI Company
+**Exit criteria (met):** verification produces structured results across all six strategies; failures are diagnosed, recovered safely within bounds, escalated when unsafe, and measurable via the evaluation framework — with Phases 1–5 intact (all prior tests still green). See [docs/reliability.md](reliability.md) for the full reference. **Phase 6 stops here — Phase 7 of the original roadmap (AI Company) is not started.**
+
+## ✅ Phase 7 — AI Employee OS *(completed)*
+
+> **Goal:** Transform NEXUS from an agent orchestration platform into an **AI workforce platform** — creating, configuring, managing, assigning, supervising, and evaluating persistent **AI Employees** that wrap existing agents with organizational identity, skills, goals, policies, budgets, and performance tracking.
+
+- **Employee lifecycle** (`app/employee/lifecycle.py`) — state machine: `draft → active → busy/paused/suspended/terminated`; TERMINATED is final. Every transition validated and audit-logged.
+- **Skills management** (`app/employee/skills.py`) — `SkillAssessor` with adaptive proficiency learning (learning rate scales inversely with mastery), confidence tracking, evidence-based updates.
+- **Goals** (`app/employee/goals.py`) — `GoalTracker` with `not_started → active → completed/failed/cancelled` transitions, progress updates, priority ordering, and overall-progress aggregation.
+- **Workload management** (`app/employee/workload.py`) — capacity parsing, available-slot tracking, utilization guards, `can_accept_task()` checks.
+- **Assignment engine** (`app/employee/assignment.py`) — weighted scoring (40% skill match, 30% workload, 20% role match, 10% performance), auto-assign and specific-assign modes, explainable reasoning.
+- **Performance tracking** (`app/employee/performance.py`) — running averages (tasks, success rate, verification pass rate, quality, latency, cost, tokens, utilization, deadline adherence), `PerformanceReviewer` generates reviews.
+- **Context builder** (`app/employee/context.py`) — priority-ordered context sections with token-budget truncation; integrates with memory (Phase 4) via namespace isolation.
+- **Templates** (`app/employee/templates.py`) — reusable employee configs; `create_from_template()` clones role/skills/tools/policies but NOT memories/credentials/history.
+- **Audit logging** (`app/employee/audit.py`) — append-only trail for every significant operation; respects `employee_audit_enabled` config.
+- **Database** (migration `0009_ai_employee_os`) — 6 tables: `ai_employees`, `employee_goals`, `employee_budgets`, `employee_reviews`, `employee_templates`, `employee_audit_log`.
+- **API** — 20+ endpoints under `/api/v1/employees` and `/api/v1/employee-templates` — full CRUD, lifecycle actions, task assignment, workload/skills/goals/performance queries, timeline/audit, workforce overview.
+- **Workflow integration** — `EMPLOYEE_TASK` step type in `WorkflowStepType`; engine resolves employee, builds context, executes via `AgentRuntime`.
+- **Frontend** — Employee Directory, Employee Detail (5 tabs), Workbench (status-grouped), Goals Dashboard, Performance Dashboard; ~25 API functions, 15+ types, nav integration.
+- **Tests** — 71 backend tests across 9 suites + 16 frontend type assertions.
+
+**Exit criteria (met):** AI Employees can be created, activated, assigned tasks, tracked for performance, and managed through their lifecycle — with full audit trails, template support, memory isolation, and workflow integration. Phase 7 stops here.
+
+## Phase 8 — AI Company
 
 - Organization/workspace model, settings, and secrets management.
 - Authentication and role-based access control (RBAC).
@@ -120,7 +146,7 @@ Multiple specialized agents now coordinate on a **shared objective** as a team. 
 
 **Exit criteria:** a company workspace operates autonomously with controlled access and stored configuration.
 
-## Phase 8 — Autonomous Business Engine
+## Phase 9 — Autonomous Business Engine
 
 - Long-running missions with continuous progress toward business goals.
 - Self-verification of work, failure detection, and self-healing.
@@ -128,7 +154,7 @@ Multiple specialized agents now coordinate on a **shared objective** as a team. 
 
 **Exit criteria:** NEXUS autonomously drives a defined business mission with monitoring and measurable performance.
 
-## Phase 9 — Evaluation, Security & Production Hardening
+## Phase 10 — Evaluation, Security & Production Hardening
 
 - Agent/task evaluation harnesses.
 - Environment isolation, sandboxing, and side-effect containment.
@@ -152,14 +178,14 @@ The following 22 capability areas drive the architecture. Each is designed in Ph
 | 5 | Tool & Action System | 2 | Built: `app/tools/` registry + executor + `PermissionContext`; built-in tools; `tool_calls` + `agent_tool_permissions` tables |
 | 6 | Browser Automation & Computer Use | 3 | Sandbox execution interface; isolated container runtime |
 | 7 | Memory Architecture | 4 | Built: `app/memory/` embedding abstraction + hybrid retriever + policies + extraction; single `memories` table (5 types, namespace isolation, ownership, TTL); runtime retrieval+injection and post-execution extraction; `/api/v1/memories` API + `/memories` UI |
-| 8 | Verification & Self-Correction | 8 | Verification hooks in agent loop; evaluation pipeline interface |
-| 9 | Failure Recovery & Resilience | 3 | Built (partial): per-step `retry_policy` gated by `idempotency`; worker `recover_stale()`; dead-letter queue + circuit breaker future |
+| 8 | Verification & Self-Correction | 6 | Built (Phase 6): shared `app/verification/` service + 6 strategies + policies; verification hooks in the agent loop, Workflow Engine, and Orchestrator; evaluation pipeline interface |
+| 9 | Failure Recovery & Resilience | 6 | Built (Phase 6): `app/recovery/` engine + state machine + 10 strategies; bounded budget, idempotency-gated retry, escalation; Phase-3 per-step `retry_policy` gateway retained; dead-letter queue + circuit breaker future |
 | 10 | Permission & Security System | 7 | RBAC model; auth middleware; policy engine interface |
 | 11 | Human-in-the-Loop Gates | 6 | Approval workflow model; webhook/callback pattern for external input |
 | 12 | Observability & Telemetry | 6 | Structured logging; execution tracing; `execution_id` propagation |
 | 13 | Evaluation & Benchmarking | 8 | Evaluation harness interface; metrics collection in agent loop |
-| 14 | AI Employee Model | 6 | Employee schema (role, permissions, status, schedule); dashboard integration |
-| 15 | AI Company Layer | 7 | Organization/workspace model; multi-tenancy via tenant_id |
+| 14 | AI Employee Model | 7 | Built (Phase 7): `app/employee/` lifecycle + skills + goals + workload + assignment + performance + context + templates + audit; `ai_employees` + 5 satellite tables; 20+ API endpoints; EMPLOYEE_TASK workflow step; 5 frontend pages |
+| 15 | AI Company Layer | 8 | Organization/workspace model; multi-tenancy via tenant_id |
 | 16 | Dynamic Agent Creation | 1 | Agent factory pattern; runtime agent spawning from mission decomposition |
 | 17 | Resource & Budget Management | 7 | Token/cost tracking in `ModelResponse.usage`; budget limits in config |
 | 18 | Feedback Loops & Learning | 8 | Feedback collection interface; evaluation scoring pipeline |

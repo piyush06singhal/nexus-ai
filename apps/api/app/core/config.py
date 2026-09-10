@@ -83,6 +83,26 @@ class Settings(BaseSettings):
     orchestration_conflict_numeric_threshold: float = 0.2
     orchestration_memory_namespace: str = "orchestration"
 
+    # Verification, recovery & evaluation (Phase 6)
+    verification_enabled: bool = False  # True in tests: auto-verify inline
+    verification_default_policy: str = "{}"  # JSON VerificationPolicy config
+    recovery_enabled: bool = False  # True in tests: recovery runs inline
+    recovery_execute_sync: bool = False
+    recovery_execution_budget_json: str = "{}"  # max_retries/attempts/time/tokens/cost
+    recovery_max_attempts: int = 3
+    recovery_retry_base_delay_ms: int = 0
+    evaluation_regression_threshold: float = 0.05
+    escalation_auto_approve: bool = False
+    failure_injection_enabled: bool = False
+
+    # AI Employee OS (Phase 7)
+    employee_default_capacity: int = 5
+    employee_max_concurrent_tasks: int = 5
+    employee_budget_default_monthly: float = 50.0
+    employee_evaluation_on_task_complete: bool = False  # True in tests
+    employee_context_max_tokens: int = 4000
+    employee_audit_enabled: bool = True
+
     # Pydantic settings behaviour
     model_config = SettingsConfigDict(
         env_file=".env",

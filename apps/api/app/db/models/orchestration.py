@@ -130,6 +130,7 @@ class Orchestration(Base):
     final_result: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     metrics: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    verification_policy: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -68,6 +68,7 @@ def to_dict(orch: Orchestration) -> dict:
         "final_result": _loads(orch.final_result),
         "error": orch.error,
         "metrics": _loads(orch.metrics),
+        "verification_policy": _loads(orch.verification_policy),
         "started_at": orch.started_at,
         "completed_at": orch.completed_at,
         "duration_ms": orch.duration_ms,
@@ -256,6 +257,7 @@ class OrchestrationService:
             objective=payload.objective,
             strategy=payload.strategy or settings.orchestration_default_strategy,
             status=OrchestrationStatus.CREATED,
+            verification_policy=_dumps(payload.verification_policy),
         )
         self._db.add(orch)
         self._db.commit()

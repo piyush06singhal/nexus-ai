@@ -189,4 +189,29 @@ def validate_workflow_steps(
                         f"on {idempotency} step is unsafe; retries will be skipped"
                     )
 
+        # Verification policy validation (Phase 6, §26).
+        vp = _load_json(
+            getattr(step, "verification_policy", None), f"{step.name}.verification_policy"
+        )
+        if vp is not None:
+            if not isinstance(vp, dict):
+                errors.append(f"Step {step.name!r}: verification_policy must be a dict")
+            else:
+                strategies = vp.get("strategies")
+                if strategies is not None and not isinstance(strategies, list):
+                    errors.append(
+                        f"Step {step.name!r}: verification_policy.strategies must be a list"
+                    )
+                min_score = vp.get("minimum_score")
+                if min_score is not None and not (
+                    isinstance(min_score, (int, float)) and 0 <= min_score <= 1
+                ):
+                    errors.append(
+                        f"Step {step.name!r}: verification_policy.minimum_score must be 0..1"
+                    )
+                if vp.get("criteria") is not None and not isinstance(vp.get("criteria"), list):
+                    errors.append(
+                        f"Step {step.name!r}: verification_policy.criteria must be a list"
+                    )
+
     return WorkflowValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)

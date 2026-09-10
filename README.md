@@ -8,7 +8,7 @@ NEXUS lets you hand a high-level business objective to a system of AI agents tha
 2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
 3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
 
-> **Status: Phase 5 (Multi-Agent Orchestration).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution.
+> **Status: Phase 7 (AI Employee OS).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform.
 
 ---
 
@@ -220,6 +220,91 @@ See [docs/orchestration.md](docs/orchestration.md) for the full orchestration re
 
 ---
 
+## Phase 6 — Verification, Recovery & Evaluation
+
+NEXUS now knows whether work was **right** — and what to do when it wasn't. A shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest to a human, and an evaluation framework measures how the whole system performs.
+
+- **Verification (`app/verification/`)** — one reusable service used by the agent-loop hooks, Workflow Engine, and Orchestrator. Six strategies (`deterministic`, `schema`, `rules`, `tool`, `model`, `independent_agent`) run per a `VerificationPolicy` and aggregate to a single PASS/FAIL/PARTIAL/UNCERTAIN result with score + confidence. Deterministic-first; a verifier is never the same agent that did the work.
+- **Recovery (`app/recovery/`)** — `RecoveryEngine` runs a state machine (`detected → classified → planned → recovering → reverified → recovered`) across ten bounded strategies (retry, backoff, modified-input, replan, fallback agent/tool, skip, partial completion, escalate, abort). **Safety-first:** recovery never broadens permissions and idempotency-gated budgets bound every retry — never `while not success: retry()`.
+- **Escalation (`/escalations` UI + API)** — anything that can't recover safely surfaces for **human approval/rejection**; an escalation can never be approved by the agent itself.
+- **Evaluation (`app/evaluation/`)** — named metrics, a deterministic 8-case dataset, persisted runs, run comparison, and regression detection — all provider-independent and testable with no API key.
+- **Dashboards** — **Verifications**, **Recoveries** (with a per-attempt recovery timeline), **Evaluations** (metric bars, comparison, regression), and **Escalations** (approve/reject).
+
+### Try it in 60 seconds
+
+```bash
+# 1. Create a mock agent that answers 42
+curl -X POST localhost:8000/api/v1/agents -H 'Content-Type: application/json' \
+  -d '{"name":"answerer","role":"general","status":"active","provider":"mock","model_name":"mock-model","model_params":{"reply":"{\"summary\":\"ok\",\"output\":{\"answer\":42}}"}}'
+
+# 2. Make an execution to verify & recover against
+curl -X POST localhost:8000/api/v1/tasks -H 'Content-Type: application/json' \
+  -d '{"title":"computational task","input_data":{"question":"meaning of life"}}' >/dev/null
+TASK=$(curl localhost:8000/api/v1/tasks | jq '.[-1] | select(.title=="computational task") | .id')
+EXEC=$(curl -X POST localhost:8000/api/v1/tasks/$TASK/execute | jq -r .id)
+
+# 3. Verify the execution's output, then run an evaluation
+curl -X POST localhost:8000/api/v1/verifications -H 'Content-Type: application/json' \
+  -d "{\"execution_id\":\"$EXEC\"}"
+curl -X POST localhost:8000/api/v1/evaluations/runs -H 'Content-Type: application/json' \
+  -d '{"use_default_dataset":true}'
+curl localhost:8000/api/v1/evaluations/runs | jq .runs[0]
+```
+
+Open the **Verifications**, **Recoveries**, **Evaluations**, and **Escalations** pages in the UI to inspect runs, failure timelines, and pending human reviews.
+
+See [docs/reliability.md](docs/reliability.md) for the full reliability reference.
+
+---
+
+## Phase 7 — AI Employee OS
+
+NEXUS now has a **workforce**. AI Employees are persistent entities with organizational identity, skills, goals, policies, budgets, and performance tracking — wrapping existing agents with a management layer that makes them feel like real team members.
+
+**The Employee OS layer** sits on top of the existing Agent Runtime, Workflow Engine, Memory, and Orchestration. It does NOT replace any Phase 1–6 code.
+
+- **Employee lifecycle** — `draft → active → busy/paused/suspended/terminated`; every transition is validated and audit-logged. TERMINATED is final.
+- **Skills** — `SkillAssessor` with adaptive proficiency learning (faster growth at low proficiency, slower as mastery increases), confidence tracking, and evidence-based updates.
+- **Goals** — `GoalTracker` with `not_started → active → completed/failed/cancelled` transitions, progress tracking, priority ordering, and overall-progress aggregation.
+- **Assignment engine** — weighted scoring (40% skill match, 30% workload availability, 20% role match, 10% real performance success rate) with auto-assign and specific-assign modes, plus explainable reasoning. Every successful assignment persists a real `Task` (owned by the employee's backing agent, status `queued`) and returns its `task_id`.
+- **Real task inbox** — each employee has a backing agent and owns concrete `Task`s, listed via `GET /employees/{id}/tasks` and executed via `POST /employees/{id}/tasks/{id}/execute`, which feeds the outcome back into performance.
+- **Workload** — `/employees/{id}/workload` counts real `Task` rows by status (queued/in-progress/completed/failed), not hardcoded zeroes.
+- **Performance tracking** — running averages for tasks completed, success rate, verification pass rate, quality, latency, cost, tokens, utilization, and deadline adherence, updated in real time as assigned tasks execute. Automated reviews with strengths, weaknesses, and recommendations.
+- **Context builder** — priority-ordered context sections (identity, responsibilities, goals, skills, tools, policies) with token-budget truncation, integrated with Phase 4 memory via namespace isolation.
+- **Templates** — reusable employee configs; `create_from_template()` clones role, skills, tools, and policies but NOT memories, credentials, or history.
+- **Audit logging** — append-only trail for every significant operation, with timeline views and workforce overview.
+- **Workflow integration** — `EMPLOYEE_TASK` step type lets workflows assign tasks to employees with full context.
+- **Dashboard** — Employee Directory, Employee Detail (5 tabs), Workbench, Goals Dashboard, Performance Dashboard.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Create an active employee
+curl -X POST localhost:8000/api/v1/employees -H 'Content-Type: application/json' \
+  -d '{"name":"research-analyst","display_name":"Alex","role":"analyst","status":"active",
+       "skills":[{"name":"research","category":"core","proficiency":0.8}],
+       "responsibilities":["Analyze data","Write reports"]}'
+
+# 2. Set a goal
+EMP_ID=$(curl localhost:8000/api/v1/employees | jq -r '.items[0].id')
+curl -X POST localhost:8000/api/v1/employees/$EMP_ID/goals -H 'Content-Type: application/json' \
+  -d '{"title":"Improve response quality","priority":1,"target":"95% quality"}'
+
+# 3. Check workload and performance
+curl localhost:8000/api/v1/employees/$EMP_ID/workload
+curl localhost:8000/api/v1/employees/$EMP_ID/performance
+
+# 4. Activate lifecycle
+curl -X POST localhost:8000/api/v1/employees/$EMP_ID/activate
+curl localhost:8000/api/v1/employees/workforce
+```
+
+Open the **Employees**, **Workbench**, **Goals**, and **Performance** pages in the UI to manage your AI workforce.
+
+See [docs/employee-os.md](docs/employee-os.md) for the full Employee OS reference.
+
+---
+
 ## Quick Start
 
 The fastest way to see the whole stack running is Docker Compose:
@@ -313,12 +398,16 @@ nexus-ai/
 │   │   │   ├── core/       # config, logging, errors, redis
 │   │   │   ├── api/v1/     # versioned HTTP endpoints
 │   │   │   ├── ai/         # provider-agnostic model abstraction (incl. mock)
-│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, tools, workflows, memories, orchestrations
+│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, tools, workflows, memories, orchestrations, reliability, employees
 │   │   │   ├── schemas/    # Pydantic request/response contracts
 │   │   │   ├── services/   # persistence + runtime assembly (CRUD)
+│   │   │   ├── verification/ # Phase 6: 6 strategies + policy + service
+│   │   │   ├── recovery/   # Phase 6: diagnosis, planner, engine, state machine, escalation
+│   │   │   ├── evaluation/ # Phase 6: metrics, dataset, runner, comparison, regression
 │   │   │   ├── memory/     # embedding, retrieval, policies, extraction
 │   │   │   ├── orchestration/ # multi-agent engine: planner, selector, orchestrator, bus, synthesizer
 │   │   │   ├── runtime/    # Agent Runtime + context builder
+│   │   │   ├── employee/   # AI Employee OS: lifecycle, skills, goals, workload, assignment, performance
 │   │   │   ├── tools/      # tool registry, executor, permissions, built-ins
 │   │   │   └── workflow/   # engine, conditions, validator, worker, scheduler
 │   │   ├── alembic/        # database migrations
@@ -370,6 +459,19 @@ All configuration flows through environment variables — **no secrets or hardco
 | `ORCHESTRATION_MAX_REVIEW_ITERATIONS` | Cap on review revision loops | `3` |
 | `ORCHESTRATION_CONFLICT_NUMERIC_THRESHOLD` | Relative-diff that flags a numeric conflict | `0.2` |
 | `ORCHESTRATION_MEMORY_NAMESPACE` | Memory namespace for orchestration context | `orchestration` |
+| `VERIFICATION_ENABLED` | Run verification hooks during execution | `false` |
+| `VERIFICATION_DEFAULT_POLICY` | Default verification policy (JSON) | `{}` |
+| `RECOVERY_ENABLED` | Enable the recovery engine | `false` |
+| `RECOVERY_EXECUTE_SYNC` | Run recovery inline (used by tests) | `false` |
+| `RECOVERY_MAX_ATTEMPTS` | Bounded max recovery attempts per execution | `3` |
+| `EVALUATION_REGRESSION_THRESHOLD` | Δ below which a score drop flags regression | `0.05` |
+| `ESCALATION_AUTO_APPROVE` | Auto-approve escalations (never in production) | `false` |
+| `EMPLOYEE_DEFAULT_CAPACITY` | Default max concurrent tasks per employee | `5` |
+| `EMPLOYEE_MAX_CONCURRENT_TASKS` | System-wide max concurrent tasks per employee | `5` |
+| `EMPLOYEE_BUDGET_DEFAULT_MONTHLY` | Default monthly budget per employee ($) | `50.0` |
+| `EMPLOYEE_EVALUATION_ON_TASK_COMPLETE` | Auto-evaluate employee on task completion | `false` |
+| `EMPLOYEE_CONTEXT_MAX_TOKENS` | Max tokens in employee context | `4000` |
+| `EMPLOYEE_AUDIT_ENABLED` | Enable employee audit logging | `true` |
 
 AI provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) are reserved for later phases and are not required now.
 
@@ -389,6 +491,8 @@ The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all 
 - [Workflows](docs/workflows.md) — the Phase 3 workflow orchestration reference (step types, conditions, triggers, worker/scheduler, API).
 - [Memory](docs/memory.md) — the Phase 4 memory system reference (memory types, hybrid retrieval, extraction, config, API).
 - [Orchestration](docs/orchestration.md) — the Phase 5 multi-agent orchestration reference (planner, selection, execution, communication bus, synthesis, review, API).
+- [Reliability](docs/reliability.md) — the Phase 6 reference (verification strategies & policies, failure taxonomy, recovery engine, escalation, evaluation & regression, safety model).
+- [Employee OS](docs/employee-os.md) — the Phase 7 AI Employee OS reference (lifecycle, skills, goals, assignment engine, workload, performance, templates, context, audit, API).
 - [Roadmap](docs/roadmap.md) — the phased plan from foundation to autonomous business engine.
 
 ---

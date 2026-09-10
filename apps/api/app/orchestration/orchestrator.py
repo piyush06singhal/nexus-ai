@@ -522,6 +522,15 @@ class Orchestrator:
             summary = output.get("summary", execution.output_data or "")
             confidence = output.get("confidence")
 
+            # Optional per-task verification (Phase 6, §27): if the orchestration
+            # declares a verification policy, verify the task's structured output
+            # and fail the task on a below-threshold verdict so the orchestrator's
+            # dependency/fallback logic applies.
+            orchestrator_row = fresh.get(Orchestration, orchestration_id)
+            vp_cfg = _loads(orchestrator_row.verification_policy) if orchestrator_row else {}
+            if vp_cfg and vp_cfg.get("required", True):
+                self._verify_task(fresh, task, structured, vp_cfg, orchestration_id)
+
             result = OrchestrationResult(
                 orchestration_id=orchestration_id,
                 task_id=task.id,
@@ -585,6 +594,53 @@ class Orchestrator:
             return {"name": task_name, "successful": False, "error": str(exc)}
         finally:
             fresh.close()
+
+    # ── Verification ───────────────────────────────────────────────────────────
+
+    def _verify_task(
+        self,
+        db: Session,
+        task: OrchestrationTask,
+        structured: dict,
+        vp_cfg: dict,
+        orchestration_id: UUID,
+    ) -> None:
+        """Verify a task's structured output against the orchestration policy (§27).
+
+        Uses the shared :class:`VerificationService` — the orchestrator never
+        re-implements verification.  A below-threshold or FAIL verdict raises so
+        the task (and its dependents) are marked failed and recover independently
+        without restarting unrelated agents.
+        """
+        from app.verification.policy import VerificationPolicy
+        from app.verification.service import VerificationService
+
+        if not structured:
+            raise OrchestratorError(
+                f"Task {task.name!r}: empty structured output cannot be verified"
+            )
+        try:
+            policy = VerificationPolicy.from_dict(vp_cfg)
+        except ValueError as exc:
+            raise OrchestratorError(
+                f"Task {task.name!r}: invalid verification_policy: {exc}"
+            ) from exc
+        if not policy.required:
+            return
+
+        result = VerificationService(db).verify(
+            structured,
+            policy=policy,
+            orchestration_id=orchestration_id,
+            context={"criteria": vp_cfg.get("criteria", [])},
+            risk_level=vp_cfg.get("risk_level", "high"),
+        )
+        below_min = result.score is not None and result.score < policy.minimum_score
+        if result.status.value in ("fail", "uncertain") or below_min:
+            raise OrchestratorError(
+                f"Task {task.name!r} failed verification (status={result.status.value}, "
+                f"score={result.score:.2f})"
+            )
 
     # ── Synthesis ─────────────────────────────────────────────────────────────
 

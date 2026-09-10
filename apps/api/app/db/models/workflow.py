@@ -52,6 +52,7 @@ class WorkflowStepType(StrEnum):
     CONDITION = "condition"
     DELAY = "delay"
     ORCHESTRATION = "orchestration"
+    EMPLOYEE_TASK = "employee_task"
 
 
 class WorkflowExecutionStatus(StrEnum):
@@ -186,6 +187,7 @@ class WorkflowStep(Base):
         nullable=False,
         default=IdempotencyTag.NON_IDEMPOTENT,
     )
+    verification_policy: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON blob
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -321,6 +323,7 @@ class StepExecution(Base):
     output_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON blob
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    verification_run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

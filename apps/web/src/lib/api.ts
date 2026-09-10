@@ -5,6 +5,32 @@ import type {
   AgentInput,
   AgentMessage,
   AgentReview,
+  AssignmentInput,
+  AssignmentResult,
+  Employee,
+  EmployeeAuditEntry,
+  EmployeeGoal,
+  EmployeeInput,
+  EmployeeListResponse,
+  EmployeePerformance,
+  EmployeeReview,
+  EmployeeSkill,
+  EmployeeTemplate,
+  EmployeeTemplateInput,
+  EmployeeTimelineEvent,
+  EmployeeWorkload,
+  Escalation,
+  EscalationListResponse,
+  EscalationState,
+  Evaluation,
+  EvaluationComparison,
+  EvaluationInput,
+  EvaluationListResponse,
+  EvaluationResult,
+  EvaluationRun,
+  EvaluationRunListResponse,
+  FailureDiagnosis,
+  GoalInput,
   HealthResponse,
   Memory,
   MemoryListResponse,
@@ -19,10 +45,19 @@ import type {
   OrchestrationStatus,
   OrchestrationTask,
   OrchestrationTimelineEvent,
+  RecoveryAttempt,
+  RecoveryPlan,
+  RegressionReport,
   ReviewCompleteInput,
   ReviewInput,
   StepExecution,
   Task,
+  VerifyRequest,
+  VerificationListResponse,
+  VerificationPolicy,
+  VerificationResult,
+  VerificationRun,
+  VerificationStatus,
   Workflow,
   WorkflowExecution,
   WorkflowInput,
@@ -31,6 +66,7 @@ import type {
   WorkflowTrigger,
   WorkflowTriggerInput,
   WorkflowValidationResult,
+  WorkforceOverview,
 } from "@/lib/types";
 
 /**
@@ -505,4 +541,393 @@ export function completeOrchestrationReview(
       body: JSON.stringify(input),
     },
   );
+}
+
+// --- Verification (Phase 6) ---
+
+/** List verification runs, optionally filtered by status. */
+export function fetchVerifications(
+  status?: VerificationStatus,
+  limit = 50,
+): Promise<VerificationListResponse> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (status) qs.set("status", status);
+  return apiFetch<VerificationListResponse>(
+    apiUrl(`/verifications?${qs.toString()}`),
+  );
+}
+
+/** Trigger verification of an execution or raw result data. */
+export function verifyExecution(input: VerifyRequest): Promise<VerificationResult> {
+  return apiFetch<VerificationResult>(apiUrl("/verifications"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Fetch a single verification result by id. */
+export function getVerification(id: string): Promise<VerificationResult> {
+  return apiFetch<VerificationResult>(apiUrl(`/verifications/${id}`));
+}
+
+/** Fetch a verification run (its status/score meta) by id. */
+export function getVerificationRun(id: string): Promise<VerificationRun> {
+  return apiFetch<VerificationRun>(apiUrl(`/verifications/runs/${id}`));
+}
+
+/** Create a verification policy. */
+export function createVerificationPolicy(input: {
+  name: string;
+  config: Record<string, unknown>;
+  scope_type?: string;
+  scope_id?: string;
+}): Promise<VerificationPolicy> {
+  return apiFetch<VerificationPolicy>(apiUrl("/verifications/policies"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// --- Recovery (Phase 6) ---
+
+/** Trigger recovery for a failed execution. */
+export function recoverExecution(
+  executionId: string,
+  input?: {
+    error_text?: string;
+    exception_type?: string;
+    tool_call_status?: string;
+    tool_call_result?: Record<string, unknown>;
+    original_plan?: Record<string, unknown>;
+  },
+): Promise<RecoveryAttempt> {
+  return apiFetch<RecoveryAttempt>(
+    apiUrl(`/recoveries/executions/${executionId}/recover`),
+    {
+      method: "POST",
+      body: JSON.stringify(input ?? { execution_id: executionId }),
+    },
+  );
+}
+
+/** Fetch a single recovery attempt by id. */
+export function getRecovery(id: string): Promise<RecoveryAttempt> {
+  return apiFetch<RecoveryAttempt>(apiUrl(`/recoveries/attempts/${id}`));
+}
+
+/** List recovery attempts for an execution. */
+export function fetchExecutionRecoveries(executionId: string): Promise<RecoveryAttempt[]> {
+  return apiFetch<RecoveryAttempt[]>(
+    apiUrl(`/recoveries/executions/${executionId}`),
+  );
+}
+
+/** Fetch the latest failure diagnosis for an execution. */
+export function fetchExecutionDiagnosis(executionId: string): Promise<FailureDiagnosis> {
+  return apiFetch<FailureDiagnosis>(
+    apiUrl(`/recoveries/diagnoses/executions/${executionId}`),
+  );
+}
+
+/** Fetch the latest recovery plan for an execution. */
+export function fetchExecutionPlan(executionId: string): Promise<RecoveryPlan> {
+  return apiFetch<RecoveryPlan>(
+    apiUrl(`/recoveries/plans/executions/${executionId}`),
+  );
+}
+
+// --- Escalations (Phase 6) ---
+
+/** List escalations, optionally filtered by state. */
+export function fetchEscalations(
+  state?: EscalationState,
+  limit = 50,
+): Promise<EscalationListResponse> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (state) qs.set("state", state);
+  return apiFetch<EscalationListResponse>(
+    apiUrl(`/escalations?${qs.toString()}`),
+  );
+}
+
+/** Approve an escalation (human-in-the-loop). */
+export function approveEscalation(
+  id: string,
+  decision_reason?: string,
+): Promise<Escalation> {
+  return apiFetch<Escalation>(apiUrl(`/escalations/${id}/approve`), {
+    method: "POST",
+    body: JSON.stringify({ decision_reason }),
+  });
+}
+
+/** Reject an escalation (human-in-the-loop). */
+export function rejectEscalation(
+  id: string,
+  decision_reason?: string,
+): Promise<Escalation> {
+  return apiFetch<Escalation>(apiUrl(`/escalations/${id}/reject`), {
+    method: "POST",
+    body: JSON.stringify({ decision_reason }),
+  });
+}
+
+// --- Evaluation (Phase 6) ---
+
+/** List evaluations. */
+export function fetchEvaluations(limit = 50): Promise<EvaluationListResponse> {
+  return apiFetch<EvaluationListResponse>(
+    apiUrl(`/evaluations?limit=${limit}`),
+  );
+}
+
+/** List evaluation runs (optionally for one evaluation). */
+export function fetchEvaluationRuns(
+  evaluationId?: string,
+  limit = 50,
+): Promise<EvaluationRunListResponse> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (evaluationId) qs.set("evaluation_id", evaluationId);
+  return apiFetch<EvaluationRunListResponse>(
+    apiUrl(`/evaluations/runs?${qs.toString()}`),
+  );
+}
+
+/** Run an evaluation suite (or the default dataset). */
+export function runEvaluation(input: EvaluationInput): Promise<EvaluationRun> {
+  return apiFetch<EvaluationRun>(apiUrl("/evaluations/runs"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Fetch a single evaluation run. */
+export function fetchEvaluationRun(id: string): Promise<EvaluationRun> {
+  return apiFetch<EvaluationRun>(apiUrl(`/evaluations/runs/${id}`));
+}
+
+/** Fetch the per-case results for an evaluation run. */
+export function fetchEvaluationResults(id: string): Promise<EvaluationResult[]> {
+  return apiFetch<EvaluationResult[]>(
+    apiUrl(`/evaluations/runs/${id}/results`),
+  );
+}
+
+/** Compare two evaluation runs. */
+export function compareEvaluationRuns(
+  runA: string,
+  runB: string,
+): Promise<EvaluationComparison> {
+  const qs = new URLSearchParams({ run_a: runA, run_b: runB });
+  return apiFetch<EvaluationComparison>(
+    apiUrl(`/evaluations/runs/compare?${qs.toString()}`),
+  );
+}
+
+/** Check for regression between two scores. */
+export function checkRegression(
+  previous: number,
+  current: number,
+): Promise<RegressionReport> {
+  const qs = new URLSearchParams({
+    previous: String(previous),
+    current: String(current),
+  });
+  return apiFetch<RegressionReport>(
+    apiUrl(`/evaluations/regression/check?${qs.toString()}`),
+  );
+}
+
+/** Fetch a single evaluation by id. */
+export function getEvaluation(id: string): Promise<Evaluation> {
+  return apiFetch<Evaluation>(apiUrl(`/evaluations/${id}`));
+}
+
+// --- AI Employee OS (Phase 7) ---
+
+export function fetchEmployees(params?: {
+  status?: string;
+  role?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<EmployeeListResponse> {
+  const sp = new URLSearchParams();
+  if (params?.status) sp.set("status", params.status);
+  if (params?.role) sp.set("role", params.role);
+  if (params?.limit) sp.set("limit", String(params.limit));
+  if (params?.offset) sp.set("offset", String(params.offset));
+  const query = sp.toString();
+  return apiFetch<EmployeeListResponse>(
+    apiUrl(`/employees${query ? `?${query}` : ""}`),
+  );
+}
+
+export function createEmployee(input: EmployeeInput): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl("/employees"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getEmployee(id: string): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl(`/employees/${id}`));
+}
+
+export function updateEmployee(
+  id: string,
+  input: Partial<EmployeeInput>,
+): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl(`/employees/${id}`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteEmployee(id: string): Promise<void> {
+  return apiFetch<void>(apiUrl(`/employees/${id}`), { method: "DELETE" });
+}
+
+// Lifecycle actions
+
+export function activateEmployee(id: string): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl(`/employees/${id}/activate`), {
+    method: "POST",
+  });
+}
+
+export function pauseEmployee(id: string): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl(`/employees/${id}/pause`), {
+    method: "POST",
+  });
+}
+
+export function resumeEmployee(id: string): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl(`/employees/${id}/resume`), {
+    method: "POST",
+  });
+}
+
+export function suspendEmployee(id: string): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl(`/employees/${id}/suspend`), {
+    method: "POST",
+  });
+}
+
+export function terminateEmployee(id: string): Promise<Employee> {
+  return apiFetch<Employee>(apiUrl(`/employees/${id}/terminate`), {
+    method: "POST",
+  });
+}
+
+// Assignment
+
+export function assignEmployeeTask(
+  employeeId: string,
+  input: AssignmentInput,
+): Promise<AssignmentResult> {
+  return apiFetch<AssignmentResult>(apiUrl(`/employees/${employeeId}/tasks`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function autoAssignEmployeeTask(
+  input: AssignmentInput,
+): Promise<AssignmentResult> {
+  return apiFetch<AssignmentResult>(apiUrl("/employees/assign"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// Workload / Skills / Goals / Performance
+
+export function fetchEmployeeWorkload(
+  id: string,
+): Promise<EmployeeWorkload> {
+  return apiFetch<EmployeeWorkload>(apiUrl(`/employees/${id}/workload`));
+}
+
+export function fetchEmployeeSkills(id: string): Promise<EmployeeSkill[]> {
+  return apiFetch<EmployeeSkill[]>(apiUrl(`/employees/${id}/skills`));
+}
+
+export function fetchEmployeeGoals(id: string): Promise<EmployeeGoal[]> {
+  return apiFetch<EmployeeGoal[]>(apiUrl(`/employees/${id}/goals`));
+}
+
+export function createEmployeeGoal(
+  employeeId: string,
+  input: GoalInput,
+): Promise<EmployeeGoal> {
+  return apiFetch<EmployeeGoal>(apiUrl(`/employees/${employeeId}/goals`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchEmployeePerformance(
+  id: string,
+): Promise<EmployeePerformance> {
+  return apiFetch<EmployeePerformance>(
+    apiUrl(`/employees/${id}/performance`),
+  );
+}
+
+export function fetchEmployeeReviews(id: string): Promise<EmployeeReview[]> {
+  return apiFetch<EmployeeReview[]>(apiUrl(`/employees/${id}/reviews`));
+}
+
+// Timeline / Audit
+
+export function fetchEmployeeTimeline(
+  id: string,
+): Promise<EmployeeTimelineEvent[]> {
+  return apiFetch<EmployeeTimelineEvent[]>(
+    apiUrl(`/employees/${id}/timeline`),
+  );
+}
+
+export function fetchEmployeeAudit(
+  id: string,
+): Promise<EmployeeAuditEntry[]> {
+  return apiFetch<EmployeeAuditEntry[]>(apiUrl(`/employees/${id}/audit`));
+}
+
+// Templates
+
+export function fetchEmployeeTemplates(): Promise<EmployeeTemplate[]> {
+  return apiFetch<EmployeeTemplate[]>(apiUrl("/employee-templates"));
+}
+
+export function createEmployeeTemplate(
+  input: EmployeeTemplateInput,
+): Promise<EmployeeTemplate> {
+  return apiFetch<EmployeeTemplate>(apiUrl("/employee-templates"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getEmployeeTemplate(id: string): Promise<EmployeeTemplate> {
+  return apiFetch<EmployeeTemplate>(apiUrl(`/employee-templates/${id}`));
+}
+
+export function createEmployeeFromTemplate(
+  templateId: string,
+  overrides?: Partial<EmployeeInput>,
+): Promise<Employee> {
+  return apiFetch<Employee>(
+    apiUrl(`/employee-templates/${templateId}/create`),
+    {
+      method: "POST",
+      body: JSON.stringify(overrides ?? {}),
+    },
+  );
+}
+
+// Workforce overview
+
+export function fetchWorkforceOverview(): Promise<WorkforceOverview> {
+  return apiFetch<WorkforceOverview>(apiUrl("/employees/workforce"));
 }

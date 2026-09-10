@@ -104,6 +104,19 @@ def db(db_engine):
 
 
 @pytest.fixture
+def phase6_settings(monkeypatch):
+    """Enable Phase 6 verification/recovery/evaluation settings (deterministic)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "verification_enabled", True)
+    monkeypatch.setattr(settings, "recovery_enabled", True)
+    monkeypatch.setattr(settings, "failure_injection_enabled", True)
+    monkeypatch.setattr(settings, "recovery_execute_sync", True)
+    monkeypatch.setattr(settings, "escalation_auto_approve", False)
+    return settings
+
+
+@pytest.fixture
 def api_client(db_engine):
     """Test client with get_db overridden to serve the in-memory SQLite DB.
 

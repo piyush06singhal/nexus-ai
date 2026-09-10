@@ -9,12 +9,18 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     agents,
+    employee_templates,
+    employees,
+    escalations,
+    evaluations,
     executions,
     health,
     memories,
     orchestrations,
+    recoveries,
     tasks,
     tools,
+    verifications,
     workflows,
 )
 
@@ -27,3 +33,9 @@ api_router.include_router(tools.router)
 api_router.include_router(workflows.router)
 api_router.include_router(memories.router)
 api_router.include_router(orchestrations.router)
+api_router.include_router(verifications.router)
+api_router.include_router(recoveries.router)
+api_router.include_router(escalations.router)
+api_router.include_router(evaluations.router)
+api_router.include_router(employees.router)
+api_router.include_router(employee_templates.router)

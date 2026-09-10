@@ -1,6 +1,6 @@
 # NEXUS — System Architecture
 
-> **Phase 5 (Multi-Agent Orchestration).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
+> **Phase 6 (Verification, Recovery & Evaluation).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration + Verification + Recovery + Evaluation) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
 
 ---
 
@@ -94,7 +94,7 @@ FastAPI application with:
 
 - **Entry point** (`app/main.py`) — app factory, lifespan hook, CORS, router mounting, exception handlers.
 - **Configuration** (`app/core/config.py`) — pydantic-settings `Settings` singleton driven by environment variables and `.env`.
-- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Models live in `app/db/models/`: `Agent`, `Task`, `AgentExecution`, `ToolCallRecord`, `AgentToolPermission`, the Phase 3 workflow set (`Workflow`, `WorkflowStep`, `WorkflowTrigger`, `WorkflowExecution`, `StepExecution`), and the Phase 4 `Memory`.
+- **Database** (`app/db/`) — SQLAlchemy engine/session, a naming-convention declarative `Base`, and Alembic migrations. Models live in `app/db/models/`: `Agent`, `Task`, `AgentExecution`, `ToolCallRecord`, `AgentToolPermission`, the Phase 3 workflow set (`Workflow`, `WorkflowStep`, `WorkflowTrigger`, `WorkflowExecution`, `StepExecution`), the Phase 4 `Memory`, the Phase 5 orchestration set (`Orchestration`, `OrchestrationTask`, `AgentAssignment`, `AgentMessage`, `OrchestrationResult`, `OrchestrationContext`, `AgentReview`), the Phase 6 reliability set (`VerificationPolicy`, `VerificationRun`, `VerificationResult`, `FailureDiagnosis`, `RecoveryPlan`, `RecoveryAttempt`, `Escalation`, `Evaluation`, `EvaluationRun`, `EvaluationCase`, `EvaluationResult`, `EvaluationMetric`), and the Phase 7 employee set (`AIEmployee`, `EmployeeGoal`, `EmployeeBudget`, `EmployeeReview`, `EmployeeTemplate`, `EmployeeAuditLog`).
 - **Schemas** (`app/schemas/`) — Pydantic request/response contracts decoupled from the ORM, plus the `AgentResult` structured-output contract and tool/tool-call read schemas.
 - **Services** (`app/services/`) — thin persistence CRUD (`AgentService`, `TaskService`, `ExecutionService`, `ToolCallService`, `PermissionService`, `MemoryService`) and a runtime-assembly dependency (`create_runtime`) that wires the runtime to a request-scoped session.
 - **Memory** (`app/memory/`) — the Phase 4 memory system (see §3.7): embedding abstraction, hybrid retriever, retrieval/write policies, and execution extraction.
@@ -204,12 +204,46 @@ The Phase 5 coordination layer that assembles **multiple specialized agents into
 
 The engine is **deterministic and provider-independent** — the planner/synthesizer and mock providers drive the whole loop with no paid API — and `orchestration_execute_sync` runs executions inline (test suite), mirroring how the workflow engine is driven in tests.
 
-### 3.9 Infrastructure & Database
+### 3.9 Verification, Recovery & Evaluation (Phase 6)
+
+The Phase 6 reliability layer (the province of [docs/reliability.md](reliability.md)) gives the system a correctness and resilience loop:
+
+- **Verification (`app/verification/`)** — a *single reusable* verification service shared by the Agent-loop hooks, Workflow Engine, and Orchestrator. `verify()` runs `VerificationPolicy`-selected strategies over candidate output, aggregates to one result, and persists every run/result. Six strategies (`deterministic`, `schema`, `rules`, `tool`, `model`, `independent_agent`) — deterministic-first, verifier-independent, never a privilege bypass.
+- **Recovery (`app/recovery/`)** — `RecoveryEngine` plus `HeuristicDiagnoser`, `RecoveryPlanner`, `RetrySafety`, `BudgetTracker`, `RecoveryStateMachine`, `EscalationService`, and `PartialCompletionBuilder`. Ten bounded strategies drive a state machine to `recovered`/`escalated`/`aborted`; recovery never broadens permissions and retries are idempotency-gated.
+- **Evaluation (`app/evaluation/`)** — named metrics, a deterministic dataset, a runner, run comparison, and regression detection, all provider-independent and sync-inline.
+- **Service + API (`app/services/{verification,recovery,evaluation}_service.py`, `endpoints/…`)** — thin CRUD/lifecycle orchestration and serializers, exposing `/api/v1/verifications`, `/recoveries`, `/escalations`, `/evaluations`.
+
+### 3.10 Infrastructure & Database
 
 - **Docker Compose** (root) — `postgres`, `redis`, `api`, `web` services with healthchecks and dependency ordering.
 - **PostgreSQL 16** — primary store, accessed via SQLAlchemy; migrations via Alembic.
 - **Redis 7** — reserved for future caching/task infrastructure; wired but optional in Phase 0.
 - **Dockerfiles** — separate images for the API (Python 3.14) and the web app (Node 24), run as non-root.
+
+### 3.11 AI Employee OS (Phase 7)
+
+The Phase 7 workforce layer that transforms NEXUS from an agent orchestration platform into an **AI workforce platform** — creating, managing, assigning, and evaluating persistent **AI Employees** that wrap existing agents with organizational identity, skills, goals, policies, budgets, and performance tracking. See [docs/employee-os.md](employee-os.md) for the full reference.
+
+```
+API → Application Services → Employee OS → Existing Orchestration/Runtime Systems
+```
+
+The Employee OS layer sits **on top of** the existing Agent Runtime, Workflow Engine, Memory, and Orchestration subsystems. It does NOT replace or modify any Phase 1–6 code.
+
+- **Employee lifecycle** (`app/employee/lifecycle.py`) — state machine: `draft → active → busy/paused/suspended/terminated`; TERMINATED is final. Every transition validated and audit-logged.
+- **Skills** (`app/employee/skills.py`) — `SkillAssessor` with adaptive proficiency learning, confidence tracking, and evidence-based updates.
+- **Goals** (`app/employee/goals.py`) — `GoalTracker` with `not_started → active → completed/failed/cancelled` transitions, progress tracking, and priority ordering.
+- **Workload** (`app/employee/workload.py`) — capacity parsing, available-slot tracking, utilization guards, and available-employee queries.
+- **Assignment engine** (`app/employee/assignment.py`) — weighted scoring (40% skill match, 30% workload, 20% role match, 10% performance), auto-assign and specific-assign modes, explainable reasoning.
+- **Performance** (`app/employee/performance.py`) — running averages for metrics (tasks, success rate, verification pass rate, quality, latency, cost, utilization), `PerformanceReviewer` generates reviews.
+- **Context builder** (`app/employee/context.py`) — priority-ordered context sections with token-budget truncation; integrates with memory (Phase 4) via namespace isolation.
+- **Templates** (`app/employee/templates.py`) — reusable employee configs; `create_from_template()` clones role/skills/tools/policies but NOT memories/credentials/history.
+- **Audit logging** (`app/employee/audit.py`) — append-only trail for every significant operation; respects `employee_audit_enabled` config.
+- **Employee Manager** (`app/employee/manager.py`) — central service with CRUD, lifecycle operations, task assignment, workload queries, template instantiation, context building, performance reviews, and goal management.
+- **Database** (migration `0009_ai_employee_os`) — 6 tables: `ai_employees`, `employee_goals`, `employee_budgets`, `employee_reviews`, `employee_templates`, `employee_audit_log`.
+- **API** — 20+ endpoints under `/api/v1/employees` and `/api/v1/employee-templates` — full CRUD, lifecycle actions, task assignment, workload/skills/goals/performance queries, timeline/audit, workforce overview.
+- **Workflow integration** — `EMPLOYEE_TASK` step type in `WorkflowStepType`; engine resolves employee by ID, builds employee context via `EmployeeContextBuilder`, executes via `AgentRuntime`, returns employee metadata with the output.
+- **Frontend** — 5 pages: Employee Directory, Employee Detail (5 tabs), Workbench (status-grouped view), Goals Dashboard, Performance Dashboard; plus ~25 API functions, 15+ types, nav integration, and StatusBadge updates.
 
 ---
 
@@ -256,7 +290,7 @@ The engine is **deterministic and provider-independent** — the planner/synthes
 
 ---
 
-## 6. Data Model (Phases 0–5)
+## 6. Data Model (Phases 0–6)
 
 Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runtime tables; Phase 2 added the tool tables; Phase 3 added the workflow tables; Phase 4 added memory; Phase 5 adds the orchestration tables:
 
@@ -278,12 +312,25 @@ Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runti
 - **`orchestration_results`** — id, `orchestration_id` FK, `task_id`, `assignment_id`, `agent_id`, `content`, `structured_data` JSON, `confidence`, `metadata` JSON, `created_at`. One per agent task output, aggregated by the synthesizer.
 - **`orchestration_context`** — id, `orchestration_id` FK, `key`, `value` JSON, `kind` (shared_fact/decision/constraint/intermediate_result), `agent_id` (nullable — private when set), `created_at`/`updated_at`. The selective shared-context store.
 - **`agent_reviews`** — id, `orchestration_id` FK, `task_id`, `reviewer_agent_id`, `reviewee_agent_id`, `request_content`/`response_content`, `verdict` (pending/approved/rejected/request_revision), `iteration`, `created_at`/`completed_at`.
+- **`workflow_steps`/`step_executions` (Phase 6 additions)** — `workflow_steps.verification_policy` (JSON, optional per-step policy) and `step_executions.verification_run_id` (nullable link to a `verification_runs` row). Migration `0008_integration_verification`.
+- **`verification_policies`** — id, `name`, `json_config` JSON (required/strategies/minimum_score/minimum_confidence/max_attempts/allowed_verifier_types/escalation/retry), `scope_type` (agent/task/workflow/orchestration/tool/execution_type), `scope_id` (nullable), `enabled`, `created_at`/`updated_at`. Index `(scope_type, scope_id)`.
+- **`verification_runs`** — id, `execution_id`/`task_id`/`orchestration_id`/`workflow_id` (nullable, indexed), `policy_id`, `strategy_used`, `status` (pass/fail/partial/uncertain/skipped), `score`, `confidence`, `created_at`.
+- **`verification_results`** — id, `run_id` FK, `execution_id` (indexed), `verifier_type`, `verifier_id`, `status`/`score`/`confidence`, `reason`, `failed_criteria`/`passed_criteria`/`evidence`/`recommendations` JSON, `created_at`.
+- **`failure_diagnoses`** — id, `execution_id` (indexed), `category`, `severity`, `root_cause`, `retryable` (bool), `recommended_strategy`, `confidence`, `evidence` JSON, `created_at`.
+- **`recovery_plans`** — id, `execution_id` (indexed), `orchestration_id`/`workflow_id` (nullable), `category`/`severity`/`strategy`, `original_plan`/`revised_plan`/`affected_tasks`/`safety_check` JSON, `reason`, `created_at`.
+- **`recovery_attempts`** — id, `execution_id` (indexed), `plan_id` FK, `attempt_number`, `state`, `strategy`, `verification_result_id` (nullable), `outcome` (recovered/failed/escalated/aborted/partially_recovered/in_progress), `reason`, `started_at`/`completed_at`, `metadata_json`. Index `(execution_id, created_at)`.
+- **`escalations`** — id, `execution_id`/`orchestration_id`/`workflow_id` (nullable, indexed), `issue`, `category`, `severity`, `state` (pending_human_review/approved/rejected), `context` JSON, `decision_reason`, `reviewed_at`, `created_at`. Index `(state)`.
+- **`evaluations`** — id, `name`, `target_type`, `target_id` (nullable), `description`, `created_at`.
+- **`evaluation_runs`** — id, `evaluation_id` FK, `status`, `score`, `metrics` JSON, `summary`, `created_at`.
+- **`evaluation_cases`** — id, `evaluation_id` FK, `name`, `input`/`expected_outcome`/`criteria` JSON, `created_at`.
+- **`evaluation_results`** — id, `run_id` FK (indexed), `case_id` FK, `passed` (bool), `score`, `actual_outcome`/`metrics` JSON, `error`, `created_at`.
+- **`evaluation_metrics`** — id, `run_id` FK (indexed), `metric_key`, `value` (Float), `label`, `metadata_json`, `created_at`.
 
-Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`, `episodic`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
+Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`, `episodic`, `pass`, `recovered`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
 
-Planned for later phases (not yet created): `users`, `organizations`, `missions`, `approvals`, `evaluations`.
+Planned for later phases (not yet created): `users`, `organizations`, `missions`, `approvals`.
 
-These arrive incrementally; none are created prematurely.
+These arrive incrementally; none are created prematurely. (`evaluations` was created early in Phase 6 to support the evaluation framework; the capability-holding `approvals` type remains deferred, gated by `/escalations`.)
 
 ---
 

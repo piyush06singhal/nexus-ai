@@ -32,6 +32,7 @@ class OrchestrationCreate(BaseModel):
 
     objective: str = Field(min_length=1)
     strategy: str | None = Field(default=None, max_length=64)
+    verification_policy: dict[str, Any] | None = None
 
 
 class OrchestrationRead(BaseModel):
@@ -46,6 +47,7 @@ class OrchestrationRead(BaseModel):
     final_result: dict[str, Any] | None = None
     error: str | None = None
     metrics: dict[str, Any] | None = None
+    verification_policy: dict[str, Any] | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     duration_ms: int | None = None
