@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -39,6 +40,28 @@ from app.services.execution_service import to_dict as execution_to_dict
 router = APIRouter(tags=["employees"], prefix="/employees")
 
 
+def _normalize_skills(raw: str | None) -> list[dict[str, Any]] | None:
+    """Normalize the stored skills column to the list-of-dicts shape.
+
+    The column may hold either structured entries (``[{"name": ..., "level": ...}]``)
+    or plain skill names (``["python", "testing"]``) written by seeds and the
+    company layer. Map the latter to a name-only dict so `EmployeeRead` always
+    renders consistently.
+    """
+    if not raw:
+        return None
+    skills = json.loads(raw)
+    if not isinstance(skills, list):
+        return None
+    normalized: list[dict[str, Any]] = []
+    for skill in skills:
+        if isinstance(skill, str):
+            normalized.append({"name": skill})
+        elif isinstance(skill, dict):
+            normalized.append(skill)
+    return normalized or None
+
+
 def _emp_to_read(emp) -> EmployeeRead:
     """Convert an AIEmployee ORM object to EmployeeRead schema."""
     return EmployeeRead(
@@ -51,7 +74,7 @@ def _emp_to_read(emp) -> EmployeeRead:
         status=emp.status,
         availability=emp.availability,
         agent_id=emp.agent_id,
-        skills=json.loads(emp.skills) if emp.skills else None,
+        skills=_normalize_skills(emp.skills),
         responsibilities=json.loads(emp.responsibilities) if emp.responsibilities else None,
         goals=json.loads(emp.goals) if emp.goals else None,
         tools=json.loads(emp.tools) if emp.tools else None,

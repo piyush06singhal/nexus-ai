@@ -5,8 +5,26 @@ import type {
   AgentInput,
   AgentMessage,
   AgentReview,
+  Alert,
   AssignmentInput,
   AssignmentResult,
+  BudgetSnapshot,
+  Company,
+  CompanyAnalytics,
+  CompanyBudgets,
+  CompanyEmployee,
+  CompanyHealth,
+  CompanyInput,
+  CompanyPerformance,
+  CompanyReport,
+  CompanyUpdateInput,
+  Decision,
+  DecisionInput,
+  DecisionReviewEntry,
+  Department,
+  DepartmentEmployee,
+  DepartmentInput,
+  EffectivePolicy,
   Employee,
   EmployeeAuditEntry,
   EmployeeGoal,
@@ -31,7 +49,12 @@ import type {
   EvaluationRunListResponse,
   FailureDiagnosis,
   GoalInput,
+  GoalScopeType,
   HealthResponse,
+  Kpi,
+  KpiInput,
+  Membership,
+  MembershipInput,
   Memory,
   MemoryListResponse,
   MemorySearchResult,
@@ -45,11 +68,21 @@ import type {
   OrchestrationStatus,
   OrchestrationTask,
   OrchestrationTimelineEvent,
+  OrgChartNode,
+  OrgEvent,
+  OrgGoal,
+  OrgGoalInput,
+  OrgRole,
+  OrgRoleInput,
+  Policy,
+  PolicyInput,
   RecoveryAttempt,
   RecoveryPlan,
   RegressionReport,
   ReviewCompleteInput,
   ReviewInput,
+  Risk,
+  RiskInput,
   StepExecution,
   Task,
   VerifyRequest,
@@ -930,4 +963,475 @@ export function createEmployeeFromTemplate(
 
 export function fetchWorkforceOverview(): Promise<WorkforceOverview> {
   return apiFetch<WorkforceOverview>(apiUrl("/employees/workforce"));
+}
+
+// ── Companies (Phase 8: AI Company Layer) ──
+
+export function fetchCompanies(): Promise<Company[]> {
+  return apiFetch<Company[]>(apiUrl("/companies"));
+}
+
+export function createCompany(input: CompanyInput): Promise<Company> {
+  return apiFetch<Company>(apiUrl("/companies"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getCompany(id: string): Promise<Company> {
+  return apiFetch<Company>(apiUrl(`/companies/${id}`));
+}
+
+export function updateCompany(
+  id: string,
+  input: CompanyUpdateInput,
+): Promise<Company> {
+  return apiFetch<Company>(apiUrl(`/companies/${id}`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// Lifecycle
+
+export function activateCompany(id: string): Promise<Company> {
+  return apiFetch<Company>(apiUrl(`/companies/${id}/activate`), {
+    method: "POST",
+  });
+}
+
+export function pauseCompany(id: string): Promise<Company> {
+  return apiFetch<Company>(apiUrl(`/companies/${id}/pause`), {
+    method: "POST",
+  });
+}
+
+export function archiveCompany(id: string): Promise<Company> {
+  return apiFetch<Company>(apiUrl(`/companies/${id}/archive`), {
+    method: "POST",
+  });
+}
+
+// Departments
+
+export function fetchDepartments(companyId: string): Promise<Department[]> {
+  return apiFetch<Department[]>(apiUrl(`/companies/${companyId}/departments`));
+}
+
+export function createDepartment(
+  companyId: string,
+  input: DepartmentInput,
+): Promise<Department> {
+  return apiFetch<Department>(apiUrl(`/companies/${companyId}/departments`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getDepartment(id: string): Promise<Department> {
+  return apiFetch<Department>(apiUrl(`/departments/${id}`));
+}
+
+export function updateDepartment(
+  id: string,
+  input: Partial<DepartmentInput>,
+): Promise<Department> {
+  return apiFetch<Department>(apiUrl(`/departments/${id}`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchDepartmentEmployees(
+  id: string,
+  includeSubtree = false,
+): Promise<DepartmentEmployee[]> {
+  return apiFetch<DepartmentEmployee[]>(
+    apiUrl(`/departments/${id}/employees${includeSubtree ? "?include_subtree=true" : ""}`),
+  );
+}
+
+export function fetchDepartmentGoals(id: string): Promise<OrgGoal[]> {
+  return apiFetch<OrgGoal[]>(apiUrl(`/departments/${id}/goals`));
+}
+
+export function fetchDepartmentKpis(id: string): Promise<Kpi[]> {
+  return apiFetch<Kpi[]>(apiUrl(`/departments/${id}/kpis`));
+}
+
+export function fetchDepartmentPerformance(
+  id: string,
+): Promise<CompanyPerformance> {
+  return apiFetch<CompanyPerformance>(apiUrl(`/departments/${id}/performance`));
+}
+
+export function fetchDepartmentRisks(id: string): Promise<Risk[]> {
+  return apiFetch<Risk[]>(apiUrl(`/departments/${id}/risks`));
+}
+
+export function fetchDepartmentBudget(id: string): Promise<BudgetSnapshot> {
+  return apiFetch<BudgetSnapshot>(apiUrl(`/departments/${id}/budget`));
+}
+
+export function fetchDepartmentTimeline(id: string): Promise<OrgEvent[]> {
+  return apiFetch<OrgEvent[]>(apiUrl(`/departments/${id}/timeline`));
+}
+
+// Memberships
+
+export function fetchMemberships(companyId: string): Promise<Membership[]> {
+  return apiFetch<Membership[]>(apiUrl(`/companies/${companyId}/memberships`));
+}
+
+export function addMembership(
+  companyId: string,
+  input: MembershipInput,
+): Promise<Membership> {
+  return apiFetch<Membership>(apiUrl(`/companies/${companyId}/memberships`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// Employees + org chart
+
+export function fetchCompanyEmployees(companyId: string): Promise<CompanyEmployee[]> {
+  return apiFetch<CompanyEmployee[]>(apiUrl(`/companies/${companyId}/employees`));
+}
+
+export function fetchOrgChart(companyId: string): Promise<OrgChartNode> {
+  return apiFetch<OrgChartNode>(
+    apiUrl(`/companies/${companyId}/organization-chart`),
+  );
+}
+
+// Goals
+
+export function fetchCompanyGoals(
+  companyId: string,
+  scopeType?: GoalScopeType,
+): Promise<OrgGoal[]> {
+  return apiFetch<OrgGoal[]>(
+    apiUrl(
+      `/companies/${companyId}/goals${scopeType ? `?scope_type=${scopeType}` : ""}`,
+    ),
+  );
+}
+
+export function createCompanyGoal(
+  companyId: string,
+  input: OrgGoalInput,
+): Promise<OrgGoal> {
+  return apiFetch<OrgGoal>(apiUrl(`/companies/${companyId}/goals`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchGoalTree(companyId: string): Promise<OrgGoal[]> {
+  return apiFetch<OrgGoal[]>(apiUrl(`/companies/${companyId}/goals/tree`));
+}
+
+export function getGoal(id: string): Promise<OrgGoal> {
+  return apiFetch<OrgGoal>(apiUrl(`/goals/${id}`));
+}
+
+export function updateGoal(
+  id: string,
+  input: Partial<OrgGoalInput>,
+): Promise<OrgGoal> {
+  return apiFetch<OrgGoal>(apiUrl(`/goals/${id}`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function recomputeGoalProgress(id: string): Promise<OrgGoal> {
+  return apiFetch<OrgGoal>(apiUrl(`/goals/${id}/progress`));
+}
+
+// KPIs
+
+export function fetchCompanyKpis(
+  companyId: string,
+  scopeType?: GoalScopeType,
+): Promise<Kpi[]> {
+  return apiFetch<Kpi[]>(
+    apiUrl(
+      `/companies/${companyId}/kpis${scopeType ? `?scope_type=${scopeType}` : ""}`,
+    ),
+  );
+}
+
+export function createCompanyKpi(
+  companyId: string,
+  input: KpiInput,
+): Promise<Kpi> {
+  return apiFetch<Kpi>(apiUrl(`/companies/${companyId}/kpis`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function recomputeCompanyKpis(companyId: string): Promise<{
+  recomputed: number;
+}> {
+  return apiFetch<{ recomputed: number }>(
+    apiUrl(`/companies/${companyId}/kpis/recompute`),
+    { method: "POST" },
+  );
+}
+
+// Budgets
+
+export function fetchCompanyBudgets(companyId: string): Promise<CompanyBudgets> {
+  return apiFetch<CompanyBudgets>(apiUrl(`/companies/${companyId}/budgets`));
+}
+
+// Performance + reports
+
+export function fetchCompanyPerformance(
+  companyId: string,
+): Promise<CompanyPerformance> {
+  return apiFetch<CompanyPerformance>(
+    apiUrl(`/companies/${companyId}/performance`),
+  );
+}
+
+export function fetchReports(
+  companyId: string,
+  reportType?: string,
+): Promise<CompanyReport[]> {
+  return apiFetch<CompanyReport[]>(
+    apiUrl(
+      `/companies/${companyId}/reports${reportType ? `?report_type=${reportType}` : ""}`,
+    ),
+  );
+}
+
+export function generateReport(
+  companyId: string,
+  reportType = "weekly",
+): Promise<CompanyReport> {
+  return apiFetch<CompanyReport>(
+    apiUrl(`/companies/${companyId}/reports/generate?report_type=${reportType}`),
+    { method: "POST" },
+  );
+}
+
+// Risks
+
+export function fetchCompanyRisks(
+  companyId: string,
+  severity?: string,
+): Promise<Risk[]> {
+  return apiFetch<Risk[]>(
+    apiUrl(
+      `/companies/${companyId}/risks${severity ? `?severity=${severity}` : ""}`,
+    ),
+  );
+}
+
+export function createCompanyRisk(
+  companyId: string,
+  input: RiskInput,
+): Promise<Risk> {
+  return apiFetch<Risk>(apiUrl(`/companies/${companyId}/risks`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateRisk(
+  id: string,
+  input: Partial<RiskInput>,
+): Promise<Risk> {
+  return apiFetch<Risk>(apiUrl(`/risks/${id}`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// Alerts
+
+export function fetchCompanyAlerts(
+  companyId: string,
+  severity?: string,
+): Promise<Alert[]> {
+  return apiFetch<Alert[]>(
+    apiUrl(
+      `/companies/${companyId}/alerts${severity ? `?severity=${severity}` : ""}`,
+    ),
+  );
+}
+
+export function checkCompanyAlerts(companyId: string): Promise<{
+  generated: number;
+  alerts: Alert[];
+}> {
+  return apiFetch<{ generated: number; alerts: Alert[] }>(
+    apiUrl(`/companies/${companyId}/alerts/check`),
+    { method: "POST" },
+  );
+}
+
+export function acknowledgeAlert(id: string): Promise<Alert> {
+  return apiFetch<Alert>(apiUrl(`/alerts/${id}/acknowledge`), {
+    method: "POST",
+  });
+}
+
+export function resolveAlert(id: string): Promise<Alert> {
+  return apiFetch<Alert>(apiUrl(`/alerts/${id}/resolve`), {
+    method: "POST",
+  });
+}
+
+// Decisions
+
+export function fetchCompanyDecisions(
+  companyId: string,
+  decisionStatus?: string,
+): Promise<Decision[]> {
+  return apiFetch<Decision[]>(
+    apiUrl(
+      `/companies/${companyId}/decisions${decisionStatus ? `?status=${decisionStatus}` : ""}`,
+    ),
+  );
+}
+
+export function createCompanyDecision(
+  companyId: string,
+  input: DecisionInput,
+): Promise<Decision> {
+  return apiFetch<Decision>(apiUrl(`/decisions?company_id=${companyId}`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getDecision(id: string): Promise<Decision> {
+  return apiFetch<Decision>(apiUrl(`/decisions/${id}`));
+}
+
+export function fetchDecisionReviews(id: string): Promise<DecisionReviewEntry[]> {
+  return apiFetch<DecisionReviewEntry[]>(apiUrl(`/decisions/${id}/reviews`));
+}
+
+export function submitDecision(
+  id: string,
+  actorId?: string,
+): Promise<Decision> {
+  return apiFetch<Decision>(
+    apiUrl(`/decisions/${id}/submit${actorId ? `?actor_id=${actorId}` : ""}`),
+    { method: "POST" },
+  );
+}
+
+export function approveDecision(
+  id: string,
+  reviewerId: string,
+  rationale?: string,
+): Promise<Decision> {
+  return apiFetch<Decision>(
+    apiUrl(`/decisions/${id}/approve?reviewer_id=${reviewerId}`),
+    {
+      method: "POST",
+      body: JSON.stringify({ rationale: rationale ?? null }),
+    },
+  );
+}
+
+export function rejectDecision(
+  id: string,
+  reviewerId: string,
+  rationale?: string,
+): Promise<Decision> {
+  return apiFetch<Decision>(
+    apiUrl(`/decisions/${id}/reject?reviewer_id=${reviewerId}`),
+    {
+      method: "POST",
+      body: JSON.stringify({ rationale: rationale ?? null }),
+    },
+  );
+}
+
+export function implementDecision(
+  id: string,
+  actorId: string,
+): Promise<Decision> {
+  return apiFetch<Decision>(
+    apiUrl(`/decisions/${id}/implement?actor_id=${actorId}`),
+    { method: "POST" },
+  );
+}
+
+// Policies
+
+export function fetchCompanyPolicies(companyId: string): Promise<Policy[]> {
+  return apiFetch<Policy[]>(apiUrl(`/companies/${companyId}/policies`));
+}
+
+export function createCompanyPolicy(
+  companyId: string,
+  input: PolicyInput,
+): Promise<Policy> {
+  return apiFetch<Policy>(apiUrl(`/companies/${companyId}/policies`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchEffectivePolicy(
+  companyId: string,
+  key: string,
+  departmentId?: string,
+): Promise<EffectivePolicy> {
+  const sp = new URLSearchParams({ key });
+  if (departmentId) sp.set("department_id", departmentId);
+  return apiFetch<EffectivePolicy>(
+    apiUrl(`/companies/${companyId}/policies/effective?${sp.toString()}`),
+  );
+}
+
+// Roles
+
+export function fetchCompanyRoles(companyId: string): Promise<OrgRole[]> {
+  return apiFetch<OrgRole[]>(apiUrl(`/companies/${companyId}/roles`));
+}
+
+export function fetchRoles(options?: {
+  companyId?: string;
+  authorityLevel?: string;
+}): Promise<OrgRole[]> {
+  const sp = new URLSearchParams();
+  if (options?.companyId) sp.set("company_id", options.companyId);
+  if (options?.authorityLevel) sp.set("authority_level", options.authorityLevel);
+  const query = sp.toString();
+  return apiFetch<OrgRole[]>(apiUrl(`/roles${query ? `?${query}` : ""}`));
+}
+
+export function createRole(input: OrgRoleInput): Promise<OrgRole> {
+  return apiFetch<OrgRole>(apiUrl("/roles"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// Analytics + health + timeline
+
+export function fetchCompanyAnalytics(
+  companyId: string,
+): Promise<CompanyAnalytics> {
+  return apiFetch<CompanyAnalytics>(apiUrl(`/companies/${companyId}/analytics`));
+}
+
+export function fetchCompanyHealth(companyId: string): Promise<CompanyHealth> {
+  return apiFetch<CompanyHealth>(apiUrl(`/companies/${companyId}/health`));
+}
+
+export function fetchTimeline(companyId: string, limit = 50): Promise<OrgEvent[]> {
+  return apiFetch<OrgEvent[]>(
+    apiUrl(`/companies/${companyId}/timeline?limit=${limit}`),
+  );
 }

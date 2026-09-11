@@ -5,6 +5,7 @@ import {
   Bell,
   Bot,
   Brain,
+  Building2,
   ClipboardList,
   GitBranch,
   LayoutDashboard,
@@ -28,6 +29,7 @@ export interface NavItem {
 
 /** Primary navigation sections shown in the sidebar and dashboard. */
 export const NAV_SECTIONS: NavItem[] = [
+  { href: "/companies", label: "Companies", description: "AI company layer — departments, goals, KPIs, budgets, decisions, risks, and health.", icon: Building2 },
   { href: "/missions", label: "Missions", description: "High-level business objectives the workforce is working toward.", icon: Target },
   { href: "/agents", label: "Agents", description: "Individual AI agents and their roles, capabilities, and status.", icon: Bot },
   { href: "/employees", label: "Employees", description: "AI employees with roles, skills, goals, and performance tracking.", icon: Users },

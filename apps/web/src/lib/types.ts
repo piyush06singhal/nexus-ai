@@ -959,3 +959,455 @@ export interface EmployeeTemplateInput {
   policies?: Record<string, unknown>;
   verification_policy?: Record<string, unknown>;
 }
+
+// ── Phase 8: AI Company Layer ──
+
+export type CompanyStatus = "draft" | "active" | "paused" | "suspended" | "archived";
+export type DepartmentStatus = "draft" | "active" | "paused" | "archived";
+export type AuthorityLevel =
+  | "individual_contributor"
+  | "team_lead"
+  | "manager"
+  | "executive"
+  | "company_admin";
+export type GoalScopeType = "company" | "department" | "employee";
+export type GoalStatusOrg =
+  | "not_started"
+  | "active"
+  | "at_risk"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type PolicyScopeType = "system" | "company" | "department";
+export type DecisionStatus =
+  | "draft"
+  | "pending_review"
+  | "approved"
+  | "rejected"
+  | "implemented"
+  | "expired"
+  | "cancelled";
+export type RiskStatus = "open" | "mitigating" | "monitored" | "resolved" | "accepted";
+export type AlertSeverity = "critical" | "warning" | "informational";
+export type AlertStatus = "active" | "acknowledged" | "resolved";
+export type KpiCategory =
+  | "quality"
+  | "productivity"
+  | "reliability"
+  | "cost"
+  | "speed"
+  | "goal_progress"
+  | "resource_utilization"
+  | "customer"
+  | "operational";
+export type HealthStatus = "healthy" | "degraded" | "critical";
+
+export interface Company {
+  id: string;
+  name: string;
+  slug: string | null;
+  description: string | null;
+  mission: string | null;
+  vision: string | null;
+  industry: string | null;
+  timezone: string | null;
+  currency: string | null;
+  values: string[] | null;
+  strategic_priorities: string[] | null;
+  status: CompanyStatus;
+  owner_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CompanyInput {
+  name: string;
+  description?: string | null;
+  mission?: string | null;
+  vision?: string | null;
+  industry?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
+}
+
+export interface CompanyUpdateInput {
+  name?: string;
+  description?: string | null;
+  mission?: string | null;
+  vision?: string | null;
+  industry?: string | null;
+  values?: string[] | null;
+  strategic_priorities?: string[] | null;
+}
+
+export interface Department {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string | null;
+  mission: string | null;
+  manager_id: string | null;
+  parent_department_id: string | null;
+  status: DepartmentStatus;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface DepartmentInput {
+  name: string;
+  description?: string | null;
+  mission?: string | null;
+  manager_id?: string | null;
+  parent_department_id?: string | null;
+}
+
+export interface DepartmentEmployee {
+  id: string;
+  name: string;
+  display_name: string | null;
+  role: string;
+  department: string | null;
+  status: string;
+  agent_id: string | null;
+}
+
+export interface CompanyEmployee {
+  id: string;
+  name: string;
+  display_name: string | null;
+  role: string;
+  department: string | null;
+  status: string;
+  agent_id: string | null;
+  skills: string[] | null;
+  responsible_scope: {
+    department_id: string | null;
+    role_id: string | null;
+    authority_level: string | null;
+    manager_id: string | null;
+  } | null;
+}
+
+export interface Membership {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  employee_name: string | null;
+  role: string | null;
+  department_id: string | null;
+  role_id: string | null;
+  role_title: string | null;
+  authority_level: string | null;
+  responsibility: string | null;
+  manager_id: string | null;
+  created_at: string | null;
+}
+
+export interface MembershipInput {
+  employee_id: string;
+  department_id?: string | null;
+  role_id?: string | null;
+  manager_id?: string | null;
+  responsibility?: string;
+}
+
+export interface OrgRole {
+  id: string;
+  company_id: string | null;
+  name: string;
+  title: string | null;
+  description: string | null;
+  responsibilities: string[] | null;
+  required_skills: string[] | null;
+  authority_level: AuthorityLevel;
+  authority_scope: string[] | null;
+  default_policies: string[] | null;
+  kpis: string[] | null;
+  compatible_departments: string[] | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface OrgRoleInput {
+  name: string;
+  title?: string | null;
+  authority_level?: AuthorityLevel;
+  responsibilities?: string[] | null;
+  required_skills?: string[] | null;
+  default_policies?: string[] | null;
+}
+
+export interface OrgGoal {
+  id: string;
+  company_id: string;
+  scope_type: GoalScopeType;
+  scope_id: string;
+  parent_goal_id: string | null;
+  title: string;
+  description: string | null;
+  priority: number;
+  target: string | null;
+  metric: string | null;
+  deadline: string | null;
+  status: GoalStatusOrg;
+  progress: number;
+  owner_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface OrgGoalInput {
+  scope_type: GoalScopeType;
+  scope_id: string;
+  title: string;
+  description?: string | null;
+  parent_goal_id?: string | null;
+  priority?: number | null;
+  target?: number | null;
+  metric?: string | null;
+  deadline?: string | null;
+  owner_id?: string | null;
+}
+
+export type KpiTrend = "declining" | "flat" | "improving";
+
+export interface KpiValueEntry {
+  value: number;
+  variance: number | null;
+  trend: KpiTrend;
+  period_label: string | null;
+  recorded_at: string | null;
+}
+
+export interface Kpi {
+  id: string;
+  company_id: string;
+  scope_type: GoalScopeType;
+  scope_id: string;
+  name: string;
+  description: string | null;
+  category: KpiCategory;
+  source_metric: string;
+  target: number | null;
+  unit: string | null;
+  owner_id: string | null;
+  frequency: string | null;
+  current_value: number | null;
+  variance: number | null;
+  trend: KpiTrend | null;
+  recorded_at: string | null;
+  history: KpiValueEntry[];
+}
+
+export interface KpiInput {
+  scope_type: GoalScopeType;
+  scope_id: string;
+  name: string;
+  source_metric: string;
+  description?: string | null;
+  category?: KpiCategory | null;
+  target?: number | null;
+  unit?: string | null;
+  owner_id?: string | null;
+  frequency?: string | null;
+}
+
+export interface BudgetSnapshot {
+  company_id: string;
+  scope_type: string;
+  scope_id: string;
+  monthly_limit: number;
+  allocated: number;
+  reserved: number;
+  spent: number;
+  tokens_used: number;
+  cost_used: number;
+  tool_calls_used: number;
+  execution_count: number;
+  period_start: string | null;
+  period_end: string | null;
+  utilization_pct: number;
+  remaining: number;
+}
+
+export interface CompanyBudgets {
+  company: BudgetSnapshot | null;
+  departments: BudgetSnapshot[];
+}
+
+export interface Policy {
+  id: string;
+  company_id: string | null;
+  scope_type: PolicyScopeType;
+  scope_id: string | null;
+  name: string;
+  key: string;
+  value: unknown;
+  priority: number;
+  enabled: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PolicyInput {
+  scope_type: PolicyScopeType;
+  scope_id?: string | null;
+  name: string;
+  key: string;
+  value: unknown;
+  priority?: number;
+  enabled?: boolean;
+}
+
+export interface EffectivePolicy {
+  key: string;
+  value: unknown;
+  source_scope: string;
+  source_name: string | null;
+  candidates_checked: number;
+}
+
+export interface DecisionOption {
+  id: string;
+  label: string;
+}
+
+export interface Decision {
+  id: string;
+  company_id: string;
+  requester_id: string | null;
+  decision_maker_id: string | null;
+  question: string;
+  context: Record<string, unknown> | null;
+  options: DecisionOption[];
+  selected_option: DecisionOption | null;
+  evidence: Record<string, unknown> | null;
+  rationale: string | null;
+  risk_level: string;
+  risk: Record<string, unknown> | null;
+  budget_impact: Record<string, unknown> | null;
+  required_authority: AuthorityLevel;
+  status: DecisionStatus;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface DecisionInput {
+  question: string;
+  options: DecisionOption[];
+  context?: Record<string, unknown> | null;
+  evidence?: Record<string, unknown> | null;
+  rationale?: string | null;
+  risk_level?: string;
+  risk?: Record<string, unknown> | null;
+  budget_impact?: Record<string, unknown> | null;
+  required_authority?: AuthorityLevel;
+  requester_id?: string | null;
+}
+
+export interface DecisionReviewEntry {
+  id: string;
+  decision_id: string;
+  reviewer_id: string | null;
+  action: string;
+  verdict: string | null;
+  rationale: string | null;
+  previous_status: string | null;
+  next_status: string | null;
+  created_at: string | null;
+}
+
+export interface Risk {
+  id: string;
+  company_id: string;
+  scope_type: GoalScopeType;
+  scope_id: string;
+  title: string;
+  description: string | null;
+  severity: string;
+  probability: number | null;
+  impact: string | null;
+  owner_id: string | null;
+  status: RiskStatus;
+  mitigation: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RiskInput {
+  scope_type: GoalScopeType;
+  scope_id: string;
+  title: string;
+  description?: string | null;
+  severity?: string;
+  probability?: number | null;
+  impact?: string | null;
+  owner_id?: string | null;
+  mitigation?: string | null;
+}
+
+export interface Alert {
+  id: string;
+  company_id: string;
+  scope_type: GoalScopeType;
+  scope_id: string;
+  title: string;
+  severity: AlertSeverity;
+  category: string;
+  message: string;
+  status: AlertStatus;
+  payload: Record<string, unknown> | null;
+  created_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface CompanyReport {
+  id: string;
+  company_id: string;
+  report_type: string;
+  period_start: string | null;
+  period_end: string | null;
+  created_at: string | null;
+  metrics: Record<string, unknown> | null;
+  highlights: string[] | null;
+  risks: Record<string, unknown>[] | null;
+  blockers: string[] | null;
+  goal_progress: Record<string, unknown> | null;
+  recommendations: string[] | null;
+  evidence: Record<string, unknown> | null;
+  verification_status: string;
+  verification_summary: string | null;
+}
+
+export interface OrgEvent {
+  id: string;
+  company_id: string | null;
+  actor: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  details: Record<string, unknown> | null;
+  outcome: string | null;
+  created_at: string | null;
+}
+
+export interface OrgChartNode {
+  id: string;
+  type: string;
+  name: string;
+  status: string | null;
+  children: OrgChartNode[];
+}
+
+export interface CompanyHealth {
+  company_id: string;
+  overall_score: number;
+  status: HealthStatus;
+  dimensions: Record<string, number>;
+  weights: Record<string, number>;
+  computed_at: string | null;
+}
+
+export type CompanyPerformance = Record<string, unknown>;
+
+export type CompanyAnalytics = Record<string, unknown>;

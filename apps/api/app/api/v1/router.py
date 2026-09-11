@@ -9,15 +9,22 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     agents,
+    alerts,
+    companies,
+    decisions,
+    departments,
     employee_templates,
     employees,
     escalations,
     evaluations,
     executions,
+    goals,
     health,
     memories,
     orchestrations,
     recoveries,
+    risks,
+    roles,
     tasks,
     tools,
     verifications,
@@ -39,3 +46,11 @@ api_router.include_router(escalations.router)
 api_router.include_router(evaluations.router)
 api_router.include_router(employees.router)
 api_router.include_router(employee_templates.router)
+# Phase 8 — AI Company Layer
+api_router.include_router(companies.router)
+api_router.include_router(departments.router)
+api_router.include_router(goals.router)
+api_router.include_router(decisions.router)
+api_router.include_router(roles.router)
+api_router.include_router(risks.router)
+api_router.include_router(alerts.router)

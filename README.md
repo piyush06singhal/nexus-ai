@@ -8,7 +8,7 @@ NEXUS lets you hand a high-level business objective to a system of AI agents tha
 2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
 3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
 
-> **Status: Phase 7 (AI Employee OS).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform.
+> **Status: Phase 8 (AI Company Layer).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform. Phase 8 adds the **AI Company Layer**: companies, departments, org chart, company goals, KPIs (computed from authoritative data), budgets (company→department hierarchy), policies (most-restrictive-wins resolution), decisions (with audit-trail review), risks, alerts, company health scoring, analytics, and reporting — the organizational layer above the Employee OS.
 
 ---
 
@@ -305,6 +305,56 @@ See [docs/employee-os.md](docs/employee-os.md) for the full Employee OS referenc
 
 ---
 
+## Phase 8 — AI Company Layer
+
+NEXUS now has a **company**. Above the Employee OS sits an organizational layer — companies with departments, an org chart, goals with hierarchical progress, KPIs computed from real execution data, hierarchical budgets, policies that flow through the hierarchy, decisions with audit-trail review, risks, threshold alerts, and company health scoring.
+
+**The Company Layer sits above the Employee OS** and reuses the existing Agent Runtime, Workflow Engine, Memory, Orchestration, and Verification subsystems. It does NOT replace any Phase 1–7 code.
+
+- **Companies** — `draft → active → paused → archived`; full lifecycle with audit-trail events stored in `organizational_events`.
+- **Departments** — nested hierarchy via `parent_department_id`, each with its own employees, goals, KPIs, budget, risks, and timeline.
+- **Organization chart** — a recursive tree built from departments, roles, and memberships; every employee appears under their department with manager relationships.
+- **Goals** — company/dept/employee scope via `parent_goal_id` cascade; real progress computed from child goals and assigned task execution evidence.
+- **KPIs** — nine categories (`quality`, `productivity`, `reliability`, `cost`, `speed`, `goal_progress`, `resource_utilization`, `customer`, `operational`); values are **computed server-side only** from authoritative data sources (tasks, executions, verifications, budgets, goals) — never user-submitted.
+- **Budgets** — company and department hierarchy with `monthly_limit`, `allocated`, `reserved`, `spent`, and utilization; employees cannot increase their own allocation.
+- **Policies** — `PolicyResolver` walks global → company → department → employee and returns the **most-restrictive** value for every key.
+- **Decisions** — `draft → pending_review → approved/rejected → implemented`; every status change is recorded in `decision_reviews` (verdict, rationale, reviewer, previous status); recommendations are **never auto-executed**.
+- **Risks** — severity, probability, impact, status transitions, mitigation; filtered by severity.
+- **Alerts** — threshold-based detection (budget overrun, verification drop, goal at risk); `acknowledged → resolved` lifecycle.
+- **Company health** — a composite score across execution, quality, reliability, cost, goal-progress, and risk-posture dimensions with exposed weights; every dimension's raw metrics are available for explainability.
+- **Reports** — structured weekly/company reports with metrics, highlights, risks, blockers, goal progress, and recommendations; `verify()` cross-checks report metrics against source data.
+- **Analytics** — workforce, operations, reliability, finance, and strategy aggregation; deterministic budget projection via `ForecastService`.
+- **Event timeline** — a full audit trail of every significant action, filterable by company.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Create and activate a company
+curl -X POST localhost:8000/api/v1/companies -H 'Content-Type: application/json' \
+  -d '{"name":"NEXUS Labs","industry":"ai","mission":"Build the future"}'
+CO_ID=$(curl localhost:8000/api/v1/companies | jq -r '.[0].id')
+curl -X POST localhost:8000/api/v1/companies/$CO_ID/activate
+
+# 2. Add a department
+curl -X POST localhost:8000/api/v1/companies/$CO_ID/departments -H 'Content-Type: application/json' \
+  -d '{"name":"Engineering","mission":"Ship quality software"}'
+DEPT_ID=$(curl localhost:8000/api/v1/companies/$CO_ID/departments | jq -r '.[0].id')
+
+# 3. Add a company goal
+curl -X POST localhost:8000/api/v1/companies/$CO_ID/goals -H 'Content-Type: application/json' \
+  -d '{"scope_type":"company","scope_id":"'$CO_ID'","title":"Ship v1.0","priority":1}'
+
+# 4. Check health + budget
+curl localhost:8000/api/v1/companies/$CO_ID/health
+curl localhost:8000/api/v1/companies/$CO_ID/budgets
+```
+
+Open the **Companies** page in the UI to see the full executive dashboard — company health, org chart, goals, KPIs, budgets, decisions, risks, alerts, and reports.
+
+See [docs/company-os.md](docs/company-os.md) for the full AI Company Layer reference.
+
+---
+
 ## Quick Start
 
 The fastest way to see the whole stack running is Docker Compose:
@@ -493,6 +543,7 @@ The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all 
 - [Orchestration](docs/orchestration.md) — the Phase 5 multi-agent orchestration reference (planner, selection, execution, communication bus, synthesis, review, API).
 - [Reliability](docs/reliability.md) — the Phase 6 reference (verification strategies & policies, failure taxonomy, recovery engine, escalation, evaluation & regression, safety model).
 - [Employee OS](docs/employee-os.md) — the Phase 7 AI Employee OS reference (lifecycle, skills, goals, assignment engine, workload, performance, templates, context, audit, API).
+- [AI Company Layer](docs/company-os.md) — the Phase 8 reference (companies, departments, org chart, goals, KPIs, budgets, policies, decisions, risks, alerts, health, reports, analytics, API).
 - [Roadmap](docs/roadmap.md) — the phased plan from foundation to autonomous business engine.
 
 ---

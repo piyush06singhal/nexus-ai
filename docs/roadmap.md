@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Marked items in later phases are planned, not yet built. Phase 0 (Foundation), Phase 1 (Agent Runtime), Phase 2 (Tool & Action System), Phase 3 (Workflow Orchestration), Phase 4 (Memory System), and Phase 5 (Multi-Agent Orchestration) are complete.**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–8 are complete. Phase 9+ are planned.**
 
 ---
 
@@ -138,13 +138,18 @@ NEXUS no longer assumes a successful execution means a successful outcome. A sha
 
 **Exit criteria (met):** AI Employees can be created, activated, assigned tasks, tracked for performance, and managed through their lifecycle — with full audit trails, template support, memory isolation, and workflow integration. Phase 7 stops here.
 
-## Phase 8 — AI Company
+## ✅ Phase 8 — AI Company Layer *(completed)*
 
-- Organization/workspace model, settings, and secrets management.
-- Authentication and role-based access control (RBAC).
-- Multi-provider fleet configuration and shared memory across "employees."
+The organizational layer above the Employee OS — companies, departments, goals, KPIs, budgets, policies, decisions, risks, alerts, health, reports, and analytics — all built on real data from Phases 1–7.
 
-**Exit criteria:** a company workspace operates autonomously with controlled access and stored configuration.
+- **Schema & models** (migration `0010_company_layer`) — 15 tables: `companies`, `departments`, `organizational_memberships`, `organizational_roles`, `goals`, `kpis`, `kpi_values`, `budgets`, `policies`, `decisions`, `decision_reviews`, `risks`, `alerts`, `company_reports`, `organizational_events`. Scope-discriminated tables (`scope_type` + `scope_id`) avoid duplicating entity types across company/department/employee. Enums via `StrEnum` convention (`native_enum=False`).
+- **Services** (`app/company/`) — 17 service modules: `CompanyManager`, `DepartmentManager`, `MembershipManager`, `RoleManager`, `GoalManager`, `KPIService` (computed server-side only from authoritative data), `BudgetManager`, `PolicyManager` + `PolicyResolver` (most-restrictive-wins), `DecisionManager` (audit-trail reviews), `RiskManager`, `AlertManager` + `CompanyHealth` (6-dimension weighted scoring), `PerformanceAggregator`, `AnalyticsService` + `ForecastService`, `ReportGenerator`, `OrgEventLogger`, `OrgRoutingService`, `DelegationService`.
+- **API endpoints** — `/companies` (CRUD + lifecycle), `/companies/{id}/departments|employees|memberships|organization-chart|goals|kpis|budgets|performance|reports|risks|alerts|decisions|analytics|health|timeline|policies|roles`; standalone `/goals/{id}`, `/decisions` (submit/approve/reject/implement), `/risks/{id}`, `/alerts/{id}/acknowledge|resolve`, `/roles`.
+- **Frontend** — 11 pages: `/companies` list, `/companies/[id]` executive dashboard, organization chart, goals (tree + scope filter), KPIs (category filter + sparkline charts), budget (company + department cards), decisions (list + detail with submit/approve/reject/implement), risks (severity-sorted), alerts (run checks + acknowledge/resolve), department detail (5 tabs). ~60 API functions, 50+ types, nav integration, StatusBadge updates.
+- **Tests** — 18+ dedicated test suites: lifecycle, departments, membership, roles, goals, policies, budget, KPIs, decisions, risks, alerts, API, routing, delegation, reports, analytics, memory, demo. 691 total backend tests passing.
+- **Demos** — deterministic DB-backed seed (`seed_company.py`) creating NEXUS Labs with 5 departments, 8 employees, goals, budgets, and KPIs; three live demos: company goal → multi-agent orchestration → verified KPI; weekly-report workflow; health-degradation chain with alert + risk update.
+
+**Exit criteria (met):** companies can be created, activated, organized into departments with memberships/roles, goals cascade hierarchically with real progress, KPIs are computed from authoritative data (never user-submitted), budgets enforce hierarchical limits, policies resolve most-restrictively, decisions require authorized review with full audit trail, risks/alerts track organizational health, company health scoring exposes all dimensions, and reports are verified against source data. Phase 8 stops here — Phase 9 (Autonomous Business Engine) is not started.
 
 ## Phase 9 — Autonomous Business Engine
 

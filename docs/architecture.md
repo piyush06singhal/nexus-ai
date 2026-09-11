@@ -1,6 +1,6 @@
 # NEXUS — System Architecture
 
-> **Phase 6 (Verification, Recovery & Evaluation).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration + Verification + Recovery + Evaluation) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
+> **Phase 8 (AI Company Layer).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration + Verification + Recovery + Evaluation + AI Employee OS + AI Company Layer) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
 
 ---
 
@@ -245,6 +245,41 @@ The Employee OS layer sits **on top of** the existing Agent Runtime, Workflow En
 - **Workflow integration** — `EMPLOYEE_TASK` step type in `WorkflowStepType`; engine resolves employee by ID, builds employee context via `EmployeeContextBuilder`, executes via `AgentRuntime`, returns employee metadata with the output.
 - **Frontend** — 5 pages: Employee Directory, Employee Detail (5 tabs), Workbench (status-grouped view), Goals Dashboard, Performance Dashboard; plus ~25 API functions, 15+ types, nav integration, and StatusBadge updates.
 
+### 3.12 AI Company Layer (Phase 8)
+
+The organizational layer that sits **above** the Employee OS — creating a full company structure with departments, goals, KPIs, budgets, policies, decisions, risks, alerts, health scoring, and reporting. See [docs/company-os.md](company-os.md) for the full reference.
+
+```
+API → Company/Department Services → Company Layer → Employee OS → Existing Subsystems
+                                          ↓
+                                   organizational_events (audit + timeline)
+```
+
+The Company Layer sits **on top of** the Employee OS and reuses existing tables/services from Phases 1–7. It does NOT replace or modify any prior code.
+
+- **Companies** (`app/company/manager.py`) — CRUD + lifecycle (`draft → active → paused → archived`); every transition validated and audit-logged via `OrgEventLogger`. `workforce_overview` aggregates employees across all departments.
+- **Departments** (`app/company/departments.py`) — nested hierarchy via `parent_department_id`; CRUD + lifecycle; employees, goals, KPIs, performance, budget, risks, and timeline per department. Budget aggregation rolls up department totals.
+- **Memberships** (`app/company/membership.py`) — the Employee OS integration point: `organizational_memberships` links employees to companies, departments, roles, and managers. `get_reporting_tree`, `get_direct_reports`, `get_peers`, and org-chart node construction.
+- **Roles** (`app/company/roles.py`) — organizational roles with authority levels (`individual_contributor`, `team_lead`, `manager`, `executive`, `company_admin`), authority scope, required skills, and default policies.
+- **Goals** (`app/company/goals.py`) — company/department/employee scope via `parent_goal_id` cascade; real progress computed from child goals and assigned task/execution evidence.
+- **KPIs** (`app/company/kpis.py`) — `KPIService` computes values **server-side only** from authoritative sources (`tasks`, `verification_results`, `recovery_attempts`, `evaluations`, `budgets`, `goals`); no arbitrary user-submitted values. Nine categories, trend/variance/history tracking.
+- **Budgets** (`app/company/budget.py`) — `BudgetManager` + `ResourceGovernor` for company/department hierarchy; `allocate`/`reserve`/`spend`/`remaining` accounting; period rollover; hierarchical enforcement (employees cannot increase their own allocation).
+- **Policies** (`app/company/policies.py`) — `PolicyManager` CRUD + `PolicyResolver`: walks global → company → department → employee → task and returns the **most-restrictive** applicable value for each key. No `eval()`, no arbitrary code — pure value comparison.
+- **Decisions** (`app/company/decisions.py`) — `DecisionManager`: CRUD + lifecycle (`draft → pending_review → approved/rejected → implemented`); every review recorded in `decision_reviews` with verdict, rationale, reviewer, and previous status. Recommendations are **never auto-executed**.
+- **Risks** (`app/company/risks.py`) — `RiskManager`: CRUD, severity ordering, status transitions (`open → mitigating → monitored → resolved/accepted`).
+- **Alerts** (`app/company/alerts.py`) — `AlertManager`: threshold rules (budget spend >80% → warning; verification <85% → reliability; goal at-risk → goal alert); `acknowledged → resolved`. **`CompanyHealth`** scores across 6 dimensions (execution, quality, reliability, cost, goal progress, risk posture) with exposed weights and full explainability.
+- **Performance** (`app/company/performance.py`) — `PerformanceAggregator` queries real underlying tables (tasks, executions, verifications, goals, employee budgets) to produce company and department aggregates — task volume, success/failure rates, cost, latency, goal progress, employee utilization.
+- **Analytics** (`app/company/analytics.py`) — `AnalyticsService` (workforce, operations, reliability, finance, strategy aggregation) + deterministic `ForecastService` (budget projection via `spent/days*30`, goal completion extrapolation).
+- **Reports** (`app/company/reports.py`) — `ReportGenerator`: collects authoritative metrics → structured summary → optional provider summarizer → report → `verify()` cross-checks metrics against source data. Recommendations are explicitly non-executable.
+- **Events** (`app/company/events.py`) — `OrgEventLogger` writes every significant action to `organizational_events` (actor, action, target, details, outcome, correlation_id); serves both the timeline and the audit trail.
+- **Routing** (`app/company/routing.py`) — `OrgRoutingService`: company-aware assignment extending Phase 7's `AssignmentEngine` with department, role, authority, budget, and policy awareness; captures explainability (selected employee, candidates, scores, reasoning).
+- **Delegation** (`app/company/delegation.py`) — `DelegationService`: verifies authority, capability, permissions, workload, budget, and policy before delegating work down the hierarchy; prevents self-privilege-granting.
+- **Memory** (`app/company/memory.py`) — `CompanyMemoryService` delegates to existing `MemoryService` using `company:{name}` / `department:{id}` namespaces; stores decisions, policies, lessons, and reports as validated structured knowledge.
+- **Database** (migration `0010_company_layer`) — 15 tables: `companies`, `departments`, `organizational_memberships`, `organizational_roles`, `goals`, `kpis`, `kpi_values`, `budgets`, `policies`, `decisions`, `decision_reviews`, `risks`, `alerts`, `company_reports`, `organizational_events`. Scope-discriminated tables (`scope_type` + `scope_id`) avoid entity-type duplication. Enums via `StrEnum` convention (`native_enum=False`).
+- **API** — `/companies` (CRUD + lifecycle + nested endpoints for departments, employees, memberships, org-chart, goals, KPIs, budgets, performance, reports, risks, alerts, decisions, analytics, health, timeline, policies, roles); standalone `/goals/{id}`, `/decisions` (submit/approve/reject/implement), `/risks/{id}`, `/alerts/{id}/acknowledge|resolve`, `/roles`.
+- **Frontend** — 11 pages: `/companies` list, `/companies/[id]` executive dashboard, organization chart, goals, KPIs, budget, decisions (list + detail), risks, alerts, department detail (5 tabs); ~60 API functions, 50+ types, nav integration, StatusBadge updates.
+- **Scope guard** — no autonomous strategy generation, no autonomous hiring/firing, no unlimited budgets, no self-privilege, no autonomous finance/legal. Recommendations are non-executing. Decisions require authorized review with audit trail. KPI values are computed server-side, never user-submitted.
+
 ---
 
 ## 4. Communication Boundaries
@@ -325,10 +360,25 @@ Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runti
 - **`evaluation_cases`** — id, `evaluation_id` FK, `name`, `input`/`expected_outcome`/`criteria` JSON, `created_at`.
 - **`evaluation_results`** — id, `run_id` FK (indexed), `case_id` FK, `passed` (bool), `score`, `actual_outcome`/`metrics` JSON, `error`, `created_at`.
 - **`evaluation_metrics`** — id, `run_id` FK (indexed), `metric_key`, `value` (Float), `label`, `metadata_json`, `created_at`.
+- **`companies`** (Phase 8, migration `0010`) — id, `name` (unique), `slug`, `description`, `mission`, `vision`, `industry`, `values` JSON, `strategic_priorities` JSON, `status` (draft/active/paused/suspended/archived), `owner_id` FK (nullable), `timezone`, `currency`, `policies` JSON, `resource_limits` JSON, `budget` JSON, timestamps. Indexed on `(status)`.
+- **`departments`** (Phase 8) — id, `company_id` FK, `name`, `description`, `mission`, `manager_id` FK (nullable), `parent_department_id` FK (self, nullable), `status` (draft/active/paused/archived), timestamps. Unique `(company_id, name)`. Indexed on `(company_id)`.
+- **`organizational_memberships`** (Phase 8) — id, `company_id` FK, `employee_id` FK → `ai_employees`, `department_id` FK (nullable), `role_id` FK (nullable), `responsibility` (manager/ic), `manager_id` FK (nullable), timestamps. Unique `(company_id, employee_id)`. **The Employee OS integration point** — no second employee model.
+- **`organizational_roles`** (Phase 8) — id, `company_id` FK (nullable = global), `name`, `title`, `responsibilities` JSON, `required_skills` JSON, `authority_level` (individual_contributor/team_lead/manager/executive/company_admin), `authority_scope` JSON, `default_policies` JSON, `kpis` JSON, `compatible_departments` JSON, timestamps. Indexed on `(company_id)`.
+- **`goals`** (Phase 8) — id, `company_id` FK, `scope_type` (company/department/employee), `scope_id` UUID, `parent_goal_id` FK (self, nullable), `title`, `description`, `priority`, `target`, `metric`, `deadline`, `status` (not_started/active/at_risk/completed/failed/cancelled), `progress` float, `owner_id` FK (nullable), timestamps. Indexed on `(company_id, scope_type)`.
+- **`kpis`** (Phase 8) — id, `company_id` FK, `scope_type`, `scope_id`, `name`, `description`, `category` (quality/productivity/reliability/cost/speed/goal_progress/resource_utilization/customer/operational), `source_metric`, `target` float, `unit`, `owner_id` FK (nullable), `frequency`, `formula` JSON, timestamps. Indexed on `(company_id, scope_type)`.
+- **`kpi_values`** (Phase 8) — id, `kpi_id` FK, `value` float, `variance` float, `trend` (declining/flat/improving), `period_label`, `recorded_at`. Indexed on `(kpi_id, recorded_at)`.
+- **`budgets`** (Phase 8) — id, `company_id` FK, `scope_type` (company/department), `scope_id` UUID, `monthly_limit` float, `allocated` float, `reserved` float, `spent` float, `tokens_used`, `cost_used`, `tool_calls_used`, `execution_count`, `period_start`, `period_end`, timestamps. Indexed on `(company_id, scope_type, scope_id)`.
+- **`policies`** (Phase 8) — id, `company_id` FK (nullable = global system policy), `scope_type` (system/company/department), `scope_id` UUID (nullable), `name`, `key`, `value` JSON, `priority` int, `enabled` bool, timestamps. Indexed on `(company_id, scope_type)`.
+- **`decisions`** (Phase 8) — id, `company_id` FK, `requester_id` FK (nullable), `decision_maker_id` FK (nullable), `question`, `context` JSON, `options` JSON, `selected_option` JSON, `evidence` JSON, `rationale`, `risk_level`, `risk` JSON, `budget_impact` JSON, `required_authority`, `status` (draft/pending_review/approved/rejected/implemented/expired/cancelled), timestamps. Indexed on `(company_id, status)`.
+- **`decision_reviews`** (Phase 8) — id, `decision_id` FK, `reviewer_id` FK, `verdict` (approve/reject/request_revision), `rationale`, `previous_status`, `created_at`. The audit trail for every status change.
+- **`risks`** (Phase 8) — id, `company_id` FK, `scope_type`, `scope_id`, `title`, `description`, `severity` (low/medium/high/critical), `probability` float, `impact`, `owner_id` FK (nullable), `status` (open/mitigating/monitored/resolved/accepted), `mitigation`, timestamps. Indexed on `(company_id, severity)`.
+- **`alerts`** (Phase 8) — id, `company_id` FK, `scope_type`, `scope_id`, `title`, `severity` (critical/warning/informational), `category`, `message`, `status` (active/acknowledged/resolved), `payload` JSON, timestamps. Indexed on `(company_id, severity, status)`.
+- **`company_reports`** (Phase 8) — id, `company_id` FK, `period_start`, `period_end`, `report_type` (weekly/company/health), `metrics` JSON, `highlights` JSON, `risks` JSON, `blockers` JSON, `goal_progress` JSON, `recommendations` JSON (non-executable), `evidence` JSON, `verification_status` (unverified/verified), `verification_summary`, `created_at`. Indexed on `(company_id, report_type)`.
+- **`organizational_events`** (Phase 8) — id, `company_id` FK, `actor`, `action`, `target_type`, `target_id`, `details` JSON, `correlation_id`, `outcome`, `created_at`. The timeline + audit log. Indexed on `(company_id, created_at)`.
 
-Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`, `episodic`, `pass`, `recovered`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
+Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`, `episodic`, `pass`, `recovered`, `pending_review`, `mitigating`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
 
-Planned for later phases (not yet created): `users`, `organizations`, `missions`, `approvals`.
+Planned for later phases (not yet created): `users`, `missions`, `approvals`.
 
 These arrive incrementally; none are created prematurely. (`evaluations` was created early in Phase 6 to support the evaluation framework; the capability-holding `approvals` type remains deferred, gated by `/escalations`.)
 
