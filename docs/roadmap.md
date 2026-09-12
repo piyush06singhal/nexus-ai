@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–8 are complete. Phase 9+ are planned.**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–9 are complete. Phase 10+ are planned.**
 
 ---
 
@@ -149,15 +149,20 @@ The organizational layer above the Employee OS — companies, departments, goals
 - **Tests** — 18+ dedicated test suites: lifecycle, departments, membership, roles, goals, policies, budget, KPIs, decisions, risks, alerts, API, routing, delegation, reports, analytics, memory, demo. 691 total backend tests passing.
 - **Demos** — deterministic DB-backed seed (`seed_company.py`) creating NEXUS Labs with 5 departments, 8 employees, goals, budgets, and KPIs; three live demos: company goal → multi-agent orchestration → verified KPI; weekly-report workflow; health-degradation chain with alert + risk update.
 
-**Exit criteria (met):** companies can be created, activated, organized into departments with memberships/roles, goals cascade hierarchically with real progress, KPIs are computed from authoritative data (never user-submitted), budgets enforce hierarchical limits, policies resolve most-restrictively, decisions require authorized review with full audit trail, risks/alerts track organizational health, company health scoring exposes all dimensions, and reports are verified against source data. Phase 8 stops here — Phase 9 (Autonomous Business Engine) is not started.
+**Exit criteria (met):** companies can be created, activated, organized into departments with memberships/roles, goals cascade hierarchically with real progress, KPIs are computed from authoritative data (never user-submitted), budgets enforce hierarchical limits, policies resolve most-restrictively, decisions require authorized review with full audit trail, risks/alerts track organizational health, company health scoring exposes all dimensions, and reports are verified against source data.
 
-## Phase 9 — Autonomous Business Engine
+## ✅ Phase 9 — Autonomous Startup Engine *(completed)*
 
-- Long-running missions with continuous progress toward business goals.
-- Self-verification of work, failure detection, and self-healing.
-- Cost/latency metrics, evaluation, and performance feedback loops.
+The mission-driven engine **above** the Company Layer: a mission becomes a strategy, a startup plan, a bootstrapped company, and then runs governed operating cycles — all traceable and all bounded by a per-company autonomy policy.
 
-**Exit criteria:** NEXUS autonomously drives a defined business mission with monitoring and measurable performance.
+- **Schema & models** (migration `0011_autonomous_startup_engine`, additive) — 19 tables: `missions`, `strategic_plans`, `startup_plans`, `organizational_blueprints`, `workforce_plans`, `products`, `startup_projects`, `execution_plans`, `operating_cycles` (immutable), `company_state_snapshots`, `startup_feedback`, `startup_lessons`, `approval_gates`, `mission_graph_edges`, `autonomy_policies`, `resource_allocations`, `priority_decisions` (+ models for the mission graph). Enums via `StrEnum` `native_enum=False` convention.
+- **Services** (`app/startup/`) — 26 modules: `mission`, `analyze`, `validate`, `strategy`, `plans`, `blueprint`, `workforce`, `provision`, `bootstrap`, `products`, `projects`, `objectives`, `execution`, `observe`, `priority`, `allocate`, `decisions`, `gates`, `feedback`, `lessons`, `replan`, `cycle` (OperatingEngine), `graph` (MissionGraphBuilder), `autonomy` (AutonomyService), `events`, `types`. All compose Phase 1–8 infrastructure (EmployeeManager, TaskService/Verification/Recovery, Workflow/Orchestration, MemoryService, BudgetManager, PolicyResolver, KPIService, DecisionManager, OrgEventLogger) — no second any-of-those.
+- **API endpoints** — 6 routers: `/missions` (CRUD + analyze/validate/plan/activate/pause/cancel + graph/trace), `/startup-plans` (CRUD + validate/approve/bootstrap/execute), `/startup/{company_id}/cycles` (create/execute/approve/cancel) + `replan` + `state`/`state/history` + `next-actions` + `feedback`, `/products` (CRUD + validate/launch/status), `/startup-projects` (CRUD + status), `/autonomy/{company_id}` (policy GET/PUT + approval-gates + approve/reject). Company/mission scoping is always a **query parameter**.
+- **Frontend** — 13 pages under `/startup` via a client `StartupShell` context (localStorage company selection, plan→mission mapping, no per-page Suspense): overview, missions + detail, plans detail, operations + cycle detail, products + detail, projects + detail, approvals, mission-graph, feedback. `StatusBadge` + nav integration; legacy `/missions` redirects into `/startup/missions`.
+- **Tests** — 10 dedicated startup suites (mission, strategy, plan, workforce, product/project, cycle, autonomy, replanning, traceability, security, demo) using MockProvider executions; ~85 startup tests on top of the full regression suite (788+ backend green) + `types-phase9.test.ts` for the web app (98 web tests green).
+- **Demo** — deterministic `seed_autonomous_startup.py`: mission → analyze → validate → strategy → startup plan → approve → bootstrap → provision workforce → products → projects → tasks → operating cycle with **injected failure → verification → recovery → fallback agent** → KPIs → state → feedback → **replan** → **approval gate** (product-dev budget +20%, human-approved) → continued operation → mission graph → final summary.
+
+**Exit criteria (met):** a mission can be planned into a governed startup (plan → approve → bootstrap), the operating engine drives the 10-stage cycle through verification and recovery with shared infrastructure, every artifact is traceable to its mission via the mission graph, all autonomous actions respect the per-company autonomy policy (`allow / require_approval / block`) and global `MAX_*` limits, high-impact actions park at human approval gates that grant exactly one action once, feedback drives bounded replanning, cross-company access is 404-isolated, and everything runs deterministically without paid APIs.
 
 ## Phase 10 — Evaluation, Security & Production Hardening
 
@@ -166,7 +171,7 @@ The organizational layer above the Employee OS — companies, departments, goals
 - Scale-out, deployment (Kubernetes), and production observability.
 - Monetization / multi-tenant hooks.
 
-**Exit criteria:** production-ready reliability, security, and cost controls for real workloads.
+**Exit criteria:** production-ready reliability, security, and cost controls for real workloads. Phase 10 is **not started** — Phase 9's autonomy model is deliberately bounded so widening the envelope (external/browser/computer-use integrations) is a future, documented, gated change.
 
 ---
 

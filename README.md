@@ -8,7 +8,7 @@ NEXUS lets you hand a high-level business objective to a system of AI agents tha
 2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
 3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
 
-> **Status: Phase 8 (AI Company Layer).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform. Phase 8 adds the **AI Company Layer**: companies, departments, org chart, company goals, KPIs (computed from authoritative data), budgets (company→department hierarchy), policies (most-restrictive-wins resolution), decisions (with audit-trail review), risks, alerts, company health scoring, analytics, and reporting — the organizational layer above the Employee OS.
+> **Status: Phase 9 (Autonomous Startup Engine).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform. Phase 8 adds the **AI Company Layer**: companies, departments, org chart, company goals, KPIs (computed from authoritative data), budgets (company→department hierarchy), policies (most-restrictive-wins resolution), decisions (with audit-trail review), risks, alerts, company health scoring, analytics, and reporting — the organizational layer above the Employee OS. Phase 9 adds the **Autonomous Startup Engine**: missions, strategic & startup planning, company bootstrap, controlled workforce provisioning, products/projects, governed operating cycles, feedback & replanning, human approval gates, a mission traceability graph, and bounded-autonomy governance — the engine that *drives* a business mission end to end.
 
 ---
 
@@ -355,6 +355,32 @@ See [docs/company-os.md](docs/company-os.md) for the full AI Company Layer refer
 
 ---
 
+## Phase 9 — Autonomous Startup Engine
+
+Above the Company Layer, NEXUS now **drives a business mission end to end**. A mission becomes a strategy, a startup plan, and a governed operating company — and then runs **operating cycles** (observe → assess → plan → prioritize → allocate → execute → verify → measure → learn → replan) that are provably traceable and bounded by a per-company **autonomy policy**.
+
+**The engine composes the existing stack** — Agent Runtime, Workflows, Memory, Orchestration, Verification/Recovery/Evaluation, Employee OS, and Company Layer — it does NOT create a second any-of-those.
+
+- **Missions** — the root of the graph: `draft → analyzing → planned → active ⇄ paused → blocked → completed/failed/cancelled`; deterministic analysis (objectives, risks, capabilities, unknowns) + a completeness/safety validation.
+- **Startup planning** — strategic plan → startup plan (business/product/market/org/operational objectives, milestones, blueprint, workforce demand, initial products/projects, KPI targets, budget allocation, approval requirements); `validate → approve → bootstrap`.
+- **Bootstrap & provisioning** — stands up the company (departments, roles, memberships, goals, KPIs, budgets) purely through Phase 7/8 services; provisions employees via `EmployeeManager`, capped by `MAX_AUTONOMOUS_EMPLOYEES`.
+- **Products & projects** — governed lifecycles (`idea … launched … iterating`; `planned → active → blocked → completed`), seeded from the plan, launched only through a product-launch approval gate.
+- **Operating cycles** — synchronous, immutable cycle records; every action gated by `AutonomyService`; force-checkpointed by `MAX_OPERATING_CYCLE_DURATION` and capped by `MAX_AUTONOMOUS_ACTIONS_PER_CYCLE`.
+- **Autonomy & approval gates** — per-company level (`manual/assisted/bounded_autonomy/high_autonomy`, default `bounded_autonomy`) + allow matrix (`allow / require_approval / block`); gates authorize exactly **one** action, **once** — approving never widens future autonomy; finance/hiring/external actions are always `block`.
+- **Feedback, lessons & replanning** — feedback synthesized from observable signals (recommendations never auto-executed); lessons mirrored into Phase 4 memory; replanning triggers are bounded and capped.
+- **Observation & mission graph** — `CompanyStateSnapshot` scores every dimension against real metrics with explanations; `mission_graph_edges` make every artifact answer "which mission made this exist?"
+
+Open the **Autonomous Startup** page in the UI (first item in the sidebar) to create a mission, plan it, approve + bootstrap its startup plan, run operating cycles, and review approval gates.
+
+See [docs/phase-9-autonomous-startup.md](docs/phase-9-autonomous-startup.md) for the full reference, and the deterministic demo:
+
+```bash
+cd apps/api
+.venv/bin/python -m scripts.seed_autonomous_startup   # full chain with injected failure→recovery, replan, approval gate
+```
+
+---
+
 ## Quick Start
 
 The fastest way to see the whole stack running is Docker Compose:
@@ -544,6 +570,7 @@ The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all 
 - [Reliability](docs/reliability.md) — the Phase 6 reference (verification strategies & policies, failure taxonomy, recovery engine, escalation, evaluation & regression, safety model).
 - [Employee OS](docs/employee-os.md) — the Phase 7 AI Employee OS reference (lifecycle, skills, goals, assignment engine, workload, performance, templates, context, audit, API).
 - [AI Company Layer](docs/company-os.md) — the Phase 8 reference (companies, departments, org chart, goals, KPIs, budgets, policies, decisions, risks, alerts, health, reports, analytics, API).
+- [Autonomous Startup Engine](docs/phase-9-autonomous-startup.md) — the Phase 9 reference (missions, startup planning & bootstrap, operating cycles, autonomy & approval gates, feedback & replanning, observation, mission graph, API).
 - [Roadmap](docs/roadmap.md) — the phased plan from foundation to autonomous business engine.
 
 ---

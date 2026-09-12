@@ -103,6 +103,23 @@ class Settings(BaseSettings):
     employee_context_max_tokens: int = 4000
     employee_audit_enabled: bool = True
 
+    # Autonomous Startup Engine (Phase 9)
+    # Bounded-autonomy hard limits from §63. Every autonomous action is checked
+    # against these; anything beyond a limit requires a human approval gate.
+    startup_max_operating_cycle_duration: int = 90  # minutes until a cycle is forced to checkpoint
+    startup_max_autonomous_actions_per_cycle: int = 25
+    startup_max_employees: int = 20  # MAX_AUTONOMOUS_EMPLOYEES (per company)
+    startup_max_budget: float = 1500.0  # MAX_STARTUP_BUDGET (USD, per company)
+    startup_max_projects_per_plan: int = 10
+    startup_max_replanning_attempts: int = 3
+    startup_max_concurrent_operations: int = 5
+    startup_default_autonomy_level: str = (
+        "bounded_autonomy"  # manual|assisted|bounded_autonomy|high_autonomy
+    )
+    startup_require_approval_for_high_risk: bool = (
+        True  # deny high-risk autonomous actions without a gate
+    )
+
     # Pydantic settings behaviour
     model_config = SettingsConfigDict(
         env_file=".env",

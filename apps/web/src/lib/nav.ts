@@ -12,6 +12,7 @@ import {
   ListChecks,
   Network,
   RefreshCw,
+  Rocket,
   Settings,
   ShieldCheck,
   Target,
@@ -29,8 +30,9 @@ export interface NavItem {
 
 /** Primary navigation sections shown in the sidebar and dashboard. */
 export const NAV_SECTIONS: NavItem[] = [
+  { href: "/startup", label: "Autonomous Startup", description: "Mission-driven autonomous startup engine — mission graph, operating cycles, governance, and feedback.", icon: Rocket },
+  { href: "/missions", label: "Missions", description: "Startup missions — objectives, analysis, strategy, plans, and mission-graph traceability.", icon: Target },
   { href: "/companies", label: "Companies", description: "AI company layer — departments, goals, KPIs, budgets, decisions, risks, and health.", icon: Building2 },
-  { href: "/missions", label: "Missions", description: "High-level business objectives the workforce is working toward.", icon: Target },
   { href: "/agents", label: "Agents", description: "Individual AI agents and their roles, capabilities, and status.", icon: Bot },
   { href: "/employees", label: "Employees", description: "AI employees with roles, skills, goals, and performance tracking.", icon: Users },
   { href: "/employee-workbench", label: "Workbench", description: "Employee task assignments, priorities, and today's work.", icon: ClipboardList },

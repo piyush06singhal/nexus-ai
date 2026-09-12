@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     agents,
     alerts,
+    autonomy,
     companies,
     decisions,
     departments,
@@ -21,10 +22,15 @@ from app.api.v1.endpoints import (
     goals,
     health,
     memories,
+    missions,
     orchestrations,
+    products,
     recoveries,
     risks,
     roles,
+    startup,
+    startup_plans,
+    startup_projects,
     tasks,
     tools,
     verifications,
@@ -54,3 +60,10 @@ api_router.include_router(decisions.router)
 api_router.include_router(roles.router)
 api_router.include_router(risks.router)
 api_router.include_router(alerts.router)
+# Phase 9 — Autonomous Startup Engine
+api_router.include_router(missions.router)
+api_router.include_router(startup_plans.router)
+api_router.include_router(startup.router)
+api_router.include_router(products.router)
+api_router.include_router(startup_projects.router)
+api_router.include_router(autonomy.router)

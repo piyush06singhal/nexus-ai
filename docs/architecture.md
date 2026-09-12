@@ -1,6 +1,6 @@
 # NEXUS — System Architecture
 
-> **Phase 8 (AI Company Layer).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration + Verification + Recovery + Evaluation + AI Employee OS + AI Company Layer) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
+> **Phase 9 (Autonomous Startup Engine).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration + Verification + Recovery + Evaluation + AI Employee OS + AI Company Layer + Autonomous Startup Engine) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
 
 ---
 
@@ -280,6 +280,31 @@ The Company Layer sits **on top of** the Employee OS and reuses existing tables/
 - **Frontend** — 11 pages: `/companies` list, `/companies/[id]` executive dashboard, organization chart, goals, KPIs, budget, decisions (list + detail), risks, alerts, department detail (5 tabs); ~60 API functions, 50+ types, nav integration, StatusBadge updates.
 - **Scope guard** — no autonomous strategy generation, no autonomous hiring/firing, no unlimited budgets, no self-privilege, no autonomous finance/legal. Recommendations are non-executing. Decisions require authorized review with audit trail. KPI values are computed server-side, never user-submitted.
 
+### 3.13 Autonomous Startup Engine (Phase 9)
+
+The mission-driven engine **above** the Company Layer: a mission becomes a strategy, a startup plan, a bootstrapped company, and then runs governed operating cycles. See [docs/phase-9-autonomous-startup.md](phase-9-autonomous-startup.md) for the full reference.
+
+```text
+API → app/startup services → OperatingEngine / AutonomyService
+                                  ↓
+        existing subsystems: EmployeeManager · TaskService · VerificationService ·
+        Workflow/Orchestration · MemoryService · BudgetManager · PolicyResolver ·
+        KPIService · DecisionManager · OrgEventLogger  (Phase 1–8 — nothing duplicated)
+```
+
+The engine **composes** Phases 1–8 — it does NOT create a second execution, memory, company, employee, budget, or decision system.
+
+- **Missions** (`app/startup/mission.py` + `analyze.py`, `validate.py`) — mission root of the graph; lifecycle `draft → analyzing → planned → active ⇄ paused → blocked → completed/failed/cancelled`; deterministic analysis + a completeness/safety validation; company-scoped.
+- **Planning & bootstrap** (`strategy.py`, `plans.py`, `blueprint.py`, `workforce.py`, `provision.py`, `bootstrap.py`, `objectives.py`) — strategic plan → startup plan → organizational blueprint + workforce plan → provisioning via `EmployeeManager` (capped by `MAX_AUTONOMOUS_EMPLOYEES`) → company bootstrap via `CompanyManager`; `COMPANY_BOOTSTRAP_APPROVAL` gate. Products (`products.py`) and projects (`projects.py`) run governed lifecycles; product launch passes a `PRODUCT_LAUNCH_APPROVAL` gate.
+- **Operating cycle** (`cycle.py`) — `OperatingEngine` runs `observe → assess → plan → prioritize → allocate → execute → verify → measure → learn → replan` synchronously and writes an **immutable** `operating_cycles` record (ordered stages, decisions, actions, KPIs, failures, recovery, approvals, resource usage). No scheduler/worker — the cycle is a request-scoped, governed execution. `MAX_OPERATING_CYCLE_DURATION` force-checkpoints; `MAX_AUTONOMOUS_ACTIONS_PER_CYCLE` caps autonomy. EXECUTE/VERIFY/RECOVER route through TaskService/Workflow/Orchestration and the Phase 6 verification–recovery stack.
+- **Autonomy & gates** (`autonomy.py`, `gates.py`) — per-company `AutonomyLevel` + allow matrix (`allow / require_approval / block`). `AutonomyService.can_auto_act` prescribes every action; required-approval actions park at an `approval_gates` row that grants **exactly one** action once. Finance/hiring/external are `block` at every level.
+- **Feedback, lessons, replanning** (`feedback.py`, `lessons.py`, `replan.py`) — feedback synthesized from observable signals (recommendations never auto-executed); lessons mirrored into Phase 4 memory namespaces; `ReplanningEngine` bounded by `MAX_REPLANNING_ATTEMPTS`.
+- **Observation & graph** (`observe.py`, `graph.py`) — `CompanyStateSnapshot` scores dimensions against real metrics with per-dimension explanations (no fabricated health); `mission_graph_edges` record typed provenance (`derived_from/depends_on/executed_by/…`) so any artifact traces to its mission.
+- **Database** (migration `0011_autonomous_startup_engine`, additive) — 19 tables: `missions`, `strategic_plans`, `startup_plans`, `organizational_blueprints`, `workforce_plans`, `products`, `startup_projects`, `execution_plans`, `operating_cycles`, `company_state_snapshots`, `startup_feedback`, `startup_lessons`, `approval_gates`, `mission_graph_edges`, `autonomy_policies`, `resource_allocations`, `priority_decisions`. Enums via `StrEnum` convention.
+- **API** — 6 routers: `/missions` (CRUD + analyze/validate/plan/activate/pause/cancel + graph/trace), `/startup-plans` (CRUD + validate/approve/bootstrap/execute), `/startup/{company_id}/cycles` (+ execute/approve/cancel) and `replan`/`state`/`next-actions`/`feedback`, `/products`, `/startup-projects`, `/autonomy/{company_id}` (policy + approval-gates). Company/mission scoping is always a **query parameter**.
+- **Frontend** — 13 pages under `/startup` via a client `StartupShell` context (localStorage company selection, plan→mission mapping); legacy `/missions` redirects.
+- **Scope guard** — no unrestricted autonomy, no autonomous finance/hiring/firing, no self-modification, no external/browser actions; approval gates authorize one action, once; deterministic by default (MockProvider CI); `MAX_*` limits configurable in `Settings`. Phase 10 not started.
+
 ---
 
 ## 4. Communication Boundaries
@@ -396,9 +421,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.2 Mission System
 
-- **Phase:** 1 (Agent Runtime)
-- **Design accommodation:** The `missions` table design placeholder exists in the data model (Section 6). The `agents` stub table proves the ORM + Alembic pipeline that `missions` will follow. CRUD endpoint pattern established by the health endpoint structure.
-- **Interface points:** `Mission` model, `MissionService`, `POST /api/v1/missions`, `GET /api/v1/missions/{id}`.
+- **Phase:** 9 (Autonomous Startup Engine) — *built*
+- **Design accommodation:** The mission system is fully realized: `missions` is the root of a typed traceability graph (`mission_graph_edges`), analyzed (objective/risk/capability extraction), validated (completeness + safety checklist), planned into strategic/startup plans, and driven through governed operating cycles (`OperatingEngine`). Every artifact below a mission — strategy, goal, product, project, task, execution, KPI, feedback — records an edge back to it.
+- **Interface points:** `MissionService` (`app/startup/mission.py`), `MissionAnalyzer`/`MissionValidator`, `StrategicPlanner`, `StartupPlanner`, `OperatingEngine`, `MissionGraphBuilder`, and the `/api/v1/missions` + `/api/v1/startup-plans` + `/api/v1/startup/{company_id}/cycles` endpoints. See [docs/phase-9-autonomous-startup.md](phase-9-autonomous-startup.md).
 
 ### 7.3 Agent Runtime
 
@@ -510,9 +535,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.21 Closed-Loop Autonomous Business
 
-- **Phase:** 7 (Autonomous Business Engine)
-- **Design accommodation:** Long-running mission engine with goal-tracking state machine. The mission decomposition + execution loop runs continuously, verifying progress against business objectives.
-- **Interface points:** `MissionEngine.run()`, `GoalTracker.progress()`, `SelfHealing.recover()`.
+- **Phase:** 9 (Autonomous Startup Engine) — *built (bounded)*
+- **Design accommodation:** The Autonomous Startup Engine closes the loop end to end — mission → analysis/validation → strategic + startup planning → company bootstrap → workforce provisioning → operating cycles (`observe → assess → plan → prioritize → allocate → execute → verify → measure → learn → replan`) → feedback → bounded replanning — with **bounded autonomy**: every autonomous action consults `AutonomyService`; anything not auto-allowed parks at a human approval gate; finance/hiring/external are always blocked; `MAX_*` hard limits in `Settings` cap duration, actions, employees, budget, projects, replans, and concurrency. Cycle records and state snapshots are immutable for audit.
+- **Interface points:** `OperatingEngine.run_cycle()` (`app/startup/cycle.py`), `AutonomyService.can_auto_act()` (`app/startup/autonomy.py`), `ApprovalGateManager`, `ObservationLayer`, `ReplanningEngine`, `MissionGraphBuilder`, and the `/api/v1/startup/{company_id}/*` + `/api/v1/autonomy/{company_id}/*` endpoints. See [docs/phase-9-autonomous-startup.md](phase-9-autonomous-startup.md).
 
 ### 7.22 Cross-Cutting: Config, Secrets, Auth
 

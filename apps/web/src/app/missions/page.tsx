@@ -1,12 +1,12 @@
-import { PlaceholderPage } from "@/components/PlaceholderPage";
+import { redirect } from "next/navigation";
 
 export const metadata = { title: "Missions — NEXUS" };
 
+/**
+ * Missions moved into the Autonomous Startup Engine (Phase 9) as part of the
+ * mission → plan → bootstrap → operating-cycle pipeline. The legacy route now
+ * redirects into the startup section, which resolves the operating company.
+ */
 export default function MissionsPage() {
-  return (
-    <PlaceholderPage
-      title="Missions"
-      description="Missions are high-level business objectives you give NEXUS. Long-term, agents will decompose a mission into a graph of tasks, assign them to roles, and orchestrate execution toward the goal. This area is a Phase 0 placeholder."
-    />
-  );
+  redirect("/startup/missions");
 }

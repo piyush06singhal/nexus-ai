@@ -6,8 +6,11 @@ import type {
   AgentMessage,
   AgentReview,
   Alert,
+  ApprovalGate,
   AssignmentInput,
   AssignmentResult,
+  AutonomyPolicy,
+  AutonomyPolicyInput,
   BudgetSnapshot,
   Company,
   CompanyAnalytics,
@@ -17,6 +20,7 @@ import type {
   CompanyInput,
   CompanyPerformance,
   CompanyReport,
+  CompanyStateSnapshot,
   CompanyUpdateInput,
   Decision,
   DecisionInput,
@@ -60,6 +64,14 @@ import type {
   MemorySearchResult,
   MemoryStatus,
   MemoryType,
+  Mission,
+  MissionAnalysisResult,
+  MissionGraph,
+  MissionInput,
+  MissionPlanResult,
+  MissionTrace,
+  NextActions,
+  OperatingCycle,
   Orchestration,
   OrchestrationContextEntry,
   OrchestrationInput,
@@ -76,13 +88,24 @@ import type {
   OrgRoleInput,
   Policy,
   PolicyInput,
+  Product,
+  ProductInput,
+  ProductStatus,
   RecoveryAttempt,
   RecoveryPlan,
   RegressionReport,
+  ReplanAction,
   ReviewCompleteInput,
   ReviewInput,
   Risk,
   RiskInput,
+  StartupFeedback,
+  StartupFeedbackInput,
+  StartupPlan,
+  StartupPlanInput,
+  StartupProject,
+  StartupProjectInput,
+  StartupProjectStatus,
   StepExecution,
   Task,
   VerifyRequest,
@@ -91,6 +114,7 @@ import type {
   VerificationResult,
   VerificationRun,
   VerificationStatus,
+  ValidationResult,
   Workflow,
   WorkflowExecution,
   WorkflowInput,
@@ -1433,5 +1457,463 @@ export function fetchCompanyHealth(companyId: string): Promise<CompanyHealth> {
 export function fetchTimeline(companyId: string, limit = 50): Promise<OrgEvent[]> {
   return apiFetch<OrgEvent[]>(
     apiUrl(`/companies/${companyId}/timeline?limit=${limit}`),
+  );
+}
+
+// ── Autonomous Startup Engine (Phase 9) ──
+
+// Missions
+
+export function fetchMissions(companyId: string): Promise<Mission[]> {
+  return apiFetch<Mission[]>(apiUrl(`/missions?company_id=${companyId}`));
+}
+
+export function createMission(
+  input: Omit<MissionInput, "company_id"> & { company_id: string },
+): Promise<Mission> {
+  return apiFetch<Mission>(apiUrl("/missions"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getMission(companyId: string, id: string): Promise<Mission> {
+  return apiFetch<Mission>(apiUrl(`/missions/${id}?company_id=${companyId}`));
+}
+
+export function analyzeMission(companyId: string, id: string): Promise<MissionAnalysisResult> {
+  return apiFetch<MissionAnalysisResult>(
+    apiUrl(`/missions/${id}/analyze?company_id=${companyId}`),
+    { method: "POST" },
+  );
+}
+
+export function validateMission(
+  companyId: string,
+  id: string,
+): Promise<ValidationResult> {
+  return apiFetch<ValidationResult>(
+    apiUrl(`/missions/${id}/validate?company_id=${companyId}`),
+    { method: "POST" },
+  );
+}
+
+export function planMission(companyId: string, id: string): Promise<MissionPlanResult> {
+  return apiFetch<MissionPlanResult>(
+    apiUrl(`/missions/${id}/plan?company_id=${companyId}`),
+    { method: "POST" },
+  );
+}
+
+export function activateMission(companyId: string, id: string): Promise<Mission> {
+  return apiFetch<Mission>(
+    apiUrl(`/missions/${id}/activate?company_id=${companyId}`),
+    { method: "POST" },
+  );
+}
+
+export function pauseMission(companyId: string, id: string): Promise<Mission> {
+  return apiFetch<Mission>(
+    apiUrl(`/missions/${id}/pause?company_id=${companyId}`),
+    { method: "POST" },
+  );
+}
+
+export function cancelMission(companyId: string, id: string): Promise<Mission> {
+  return apiFetch<Mission>(
+    apiUrl(`/missions/${id}/cancel?company_id=${companyId}`),
+    { method: "POST" },
+  );
+}
+
+export function fetchMissionGraph(
+  companyId: string,
+  missionId?: string,
+  relation?: string,
+): Promise<MissionGraph> {
+  const base = missionId
+    ? `/missions/${missionId}/graph`
+    : `/missions/graph`;
+  const sp = new URLSearchParams({ company_id: companyId });
+  if (relation) sp.set("relation", relation);
+  return apiFetch<MissionGraph>(apiUrl(`${base}?${sp.toString()}`));
+}
+
+export function traceMissionNode(
+  companyId: string,
+  missionId: string,
+  nodeType: string,
+  nodeId: string,
+): Promise<MissionTrace> {
+  const sp = new URLSearchParams({
+    company_id: companyId,
+    node_type: nodeType,
+    node_id: nodeId,
+  });
+  return apiFetch<MissionTrace>(
+    apiUrl(`/missions/${missionId}/graph/trace?${sp.toString()}`),
+  );
+}
+
+// Startup plans
+
+export function fetchStartupPlans(
+  companyId: string,
+  missionId: string,
+): Promise<StartupPlan[]> {
+  return apiFetch<StartupPlan[]>(
+    apiUrl(`/startup-plans?company_id=${companyId}&mission_id=${missionId}`),
+  );
+}
+
+export function createStartupPlan(
+  companyId: string,
+  input: StartupPlanInput,
+): Promise<StartupPlan> {
+  return apiFetch<StartupPlan>(apiUrl(`/startup-plans?company_id=${companyId}`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getStartupPlan(
+  companyId: string,
+  missionId: string,
+  id: string,
+): Promise<StartupPlan> {
+  return apiFetch<StartupPlan>(
+    apiUrl(`/startup-plans/${id}?company_id=${companyId}&mission_id=${missionId}`),
+  );
+}
+
+export function validateStartupPlan(
+  companyId: string,
+  missionId: string,
+  planId: string,
+): Promise<ValidationResult> {
+  return apiFetch<ValidationResult>(
+    apiUrl(
+      `/startup-plans/${planId}/validate?company_id=${companyId}&mission_id=${missionId}`,
+    ),
+    { method: "POST" },
+  );
+}
+
+export function approveStartupPlan(
+  companyId: string,
+  missionId: string,
+  planId: string,
+  approvedGateId?: string,
+): Promise<StartupPlan> {
+  const sp = new URLSearchParams({ company_id: companyId, mission_id: missionId });
+  if (approvedGateId) sp.set("approved_gate_id", approvedGateId);
+  return apiFetch<StartupPlan>(
+    apiUrl(`/startup-plans/${planId}/approve?${sp.toString()}`),
+    { method: "POST" },
+  );
+}
+
+export function bootstrapStartupPlan(
+  companyId: string,
+  missionId: string,
+  planId: string,
+  approvedGateId?: string,
+): Promise<Record<string, unknown>> {
+  const sp = new URLSearchParams({ company_id: companyId, mission_id: missionId });
+  if (approvedGateId) sp.set("approved_gate_id", approvedGateId);
+  return apiFetch<Record<string, unknown>>(
+    apiUrl(`/startup-plans/${planId}/bootstrap?${sp.toString()}`),
+    { method: "POST" },
+  );
+}
+
+export function executeStartupPlan(
+  companyId: string,
+  missionId: string,
+  planId: string,
+  approvedGateId?: string,
+): Promise<OperatingCycle> {
+  const sp = new URLSearchParams({ company_id: companyId, mission_id: missionId });
+  if (approvedGateId) sp.set("approved_gate_id", approvedGateId);
+  return apiFetch<OperatingCycle>(
+    apiUrl(`/startup-plans/${planId}/execute?${sp.toString()}`),
+    { method: "POST" },
+  );
+}
+
+// Products
+
+export function fetchProducts(companyId: string): Promise<Product[]> {
+  return apiFetch<Product[]>(apiUrl(`/products?company_id=${companyId}`));
+}
+
+export function createProduct(input: ProductInput): Promise<Product> {
+  return apiFetch<Product>(apiUrl("/products"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getProduct(companyId: string, id: string): Promise<Product> {
+  return apiFetch<Product>(apiUrl(`/products/${id}?company_id=${companyId}`));
+}
+
+export function updateProduct(
+  companyId: string,
+  id: string,
+  input: Partial<ProductInput>,
+): Promise<Product> {
+  return apiFetch<Product>(apiUrl(`/products/${id}?company_id=${companyId}`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function moveProductStatus(
+  companyId: string,
+  id: string,
+  target: ProductStatus,
+): Promise<Product> {
+  return apiFetch<Product>(
+    apiUrl(`/products/${id}/status?company_id=${companyId}`),
+    { method: "POST", body: JSON.stringify({ target }) },
+  );
+}
+
+export function validateProduct(
+  companyId: string,
+  id: string,
+): Promise<ValidationResult> {
+  return apiFetch<ValidationResult>(
+    apiUrl(`/products/${id}/validate?company_id=${companyId}`),
+    { method: "POST" },
+  );
+}
+
+export function launchProduct(
+  companyId: string,
+  id: string,
+  approvedGateId?: string,
+): Promise<Product> {
+  const sp = new URLSearchParams({ company_id: companyId });
+  if (approvedGateId) sp.set("approved_gate_id", approvedGateId);
+  return apiFetch<Product>(
+    apiUrl(`/products/${id}/launch?${sp.toString()}`),
+    { method: "POST" },
+  );
+}
+
+// Startup projects
+
+export function fetchStartupProjects(
+  companyId: string,
+  status?: string,
+  productId?: string,
+): Promise<StartupProject[]> {
+  const sp = new URLSearchParams({ company_id: companyId });
+  if (status) sp.set("status", status);
+  if (productId) sp.set("product_id", productId);
+  return apiFetch<StartupProject[]>(apiUrl(`/startup-projects?${sp.toString()}`));
+}
+
+export function createStartupProject(
+  input: StartupProjectInput,
+): Promise<StartupProject> {
+  return apiFetch<StartupProject>(apiUrl("/startup-projects"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getStartupProject(
+  companyId: string,
+  id: string,
+): Promise<StartupProject> {
+  return apiFetch<StartupProject>(
+    apiUrl(`/startup-projects/${id}?company_id=${companyId}`),
+  );
+}
+
+export function moveStartupProjectStatus(
+  companyId: string,
+  id: string,
+  target: StartupProjectStatus,
+): Promise<StartupProject> {
+  return apiFetch<StartupProject>(
+    apiUrl(`/startup-projects/${id}/status?company_id=${companyId}`),
+    { method: "POST", body: JSON.stringify({ target }) },
+  );
+}
+
+// Operating cycles
+
+export function runCycle(
+  companyId: string,
+  input: { mission_id: string; startup_plan_id?: string | null; approved_gate_id?: string | null },
+): Promise<OperatingCycle> {
+  return apiFetch<OperatingCycle>(apiUrl(`/startup/${companyId}/cycles`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchCycles(companyId: string, limit = 20): Promise<OperatingCycle[]> {
+  return apiFetch<OperatingCycle[]>(
+    apiUrl(`/startup/${companyId}/cycles?limit=${limit}`),
+  );
+}
+
+export function getCycle(companyId: string, cycleId: string): Promise<OperatingCycle> {
+  return apiFetch<OperatingCycle>(
+    apiUrl(`/startup/${companyId}/cycles/${cycleId}`),
+  );
+}
+
+export function resumeCycle(
+  companyId: string,
+  cycleId: string,
+  approvedGateId?: string,
+): Promise<OperatingCycle> {
+  return apiFetch<OperatingCycle>(
+    apiUrl(`/startup/${companyId}/cycles/${cycleId}/execute`),
+    { method: "POST", body: JSON.stringify({ approved_gate_id: approvedGateId ?? null }) },
+  );
+}
+
+export function approveCycleGate(
+  companyId: string,
+  cycleId: string,
+): Promise<OperatingCycle> {
+  return apiFetch<OperatingCycle>(
+    apiUrl(`/startup/${companyId}/cycles/${cycleId}/approve`),
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export function cancelCycle(companyId: string, cycleId: string): Promise<OperatingCycle> {
+  return apiFetch<OperatingCycle>(
+    apiUrl(`/startup/${companyId}/cycles/${cycleId}/cancel`),
+    { method: "POST" },
+  );
+}
+
+// State / replan / next actions
+
+export function fetchCompanyState(
+  companyId: string,
+  persist = false,
+): Promise<CompanyStateSnapshot> {
+  return apiFetch<CompanyStateSnapshot>(
+    apiUrl(`/startup/${companyId}/state?persist=${persist}`),
+  );
+}
+
+export function fetchStateHistory(
+  companyId: string,
+  limit = 20,
+): Promise<CompanyStateSnapshot[]> {
+  return apiFetch<CompanyStateSnapshot[]>(
+    apiUrl(`/startup/${companyId}/state/history?limit=${limit}`),
+  );
+}
+
+export function replanCompany(
+  companyId: string,
+  opts?: { trigger?: string; apply?: boolean; approvedGateId?: string },
+): Promise<ReplanAction> {
+  const sp = new URLSearchParams();
+  if (opts?.trigger) sp.set("trigger", opts.trigger);
+  if (opts?.apply) sp.set("apply", "true");
+  if (opts?.approvedGateId) sp.set("approved_gate_id", opts.approvedGateId);
+  const query = sp.toString();
+  return apiFetch<ReplanAction>(
+    apiUrl(`/startup/${companyId}/replan${query ? `?${query}` : ""}`),
+    { method: "POST" },
+  );
+}
+
+export function fetchNextActions(companyId: string): Promise<NextActions> {
+  return apiFetch<NextActions>(apiUrl(`/startup/${companyId}/next-actions`));
+}
+
+// Feedback
+
+export function fetchFeedback(
+  companyId: string,
+  category?: string,
+  limit = 50,
+): Promise<StartupFeedback[]> {
+  const sp = new URLSearchParams({ limit: String(limit) });
+  if (category) sp.set("category", category);
+  return apiFetch<StartupFeedback[]>(
+    apiUrl(`/startup/${companyId}/feedback?${sp.toString()}`),
+  );
+}
+
+export function createFeedback(
+  companyId: string,
+  input: StartupFeedbackInput,
+): Promise<StartupFeedback> {
+  return apiFetch<StartupFeedback>(apiUrl(`/startup/${companyId}/feedback`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// Autonomy + approval gates
+
+export function fetchAutonomyPolicy(companyId: string): Promise<AutonomyPolicy> {
+  return apiFetch<AutonomyPolicy>(apiUrl(`/autonomy/${companyId}/policy`));
+}
+
+export function updateAutonomyPolicy(
+  companyId: string,
+  input: AutonomyPolicyInput,
+): Promise<AutonomyPolicy> {
+  return apiFetch<AutonomyPolicy>(apiUrl(`/autonomy/${companyId}/policy`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchApprovalGates(
+  companyId: string,
+  status?: string,
+): Promise<ApprovalGate[]> {
+  const sp = new URLSearchParams();
+  if (status) sp.set("status", status);
+  const query = sp.toString();
+  return apiFetch<ApprovalGate[]>(
+    apiUrl(`/autonomy/${companyId}/approval-gates${query ? `?${query}` : ""}`),
+  );
+}
+
+export function fetchPendingApprovalGates(companyId: string): Promise<ApprovalGate[]> {
+  return apiFetch<ApprovalGate[]>(
+    apiUrl(`/autonomy/${companyId}/approval-gates/pending`),
+  );
+}
+
+export function approveApprovalGate(
+  companyId: string,
+  gateId: string,
+  approverId?: string,
+  rationale?: string,
+): Promise<ApprovalGate> {
+  return apiFetch<ApprovalGate>(
+    apiUrl(`/autonomy/${companyId}/approval-gates/${gateId}/approve`),
+    { method: "POST", body: JSON.stringify({ approver_id: approverId ?? null, rationale: rationale ?? null }) },
+  );
+}
+
+export function rejectApprovalGate(
+  companyId: string,
+  gateId: string,
+  approverId?: string,
+  rationale?: string,
+): Promise<ApprovalGate> {
+  return apiFetch<ApprovalGate>(
+    apiUrl(`/autonomy/${companyId}/approval-gates/${gateId}/reject`),
+    { method: "POST", body: JSON.stringify({ approver_id: approverId ?? null, rationale: rationale ?? null }) },
   );
 }

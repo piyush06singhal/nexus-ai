@@ -1411,3 +1411,514 @@ export interface CompanyHealth {
 export type CompanyPerformance = Record<string, unknown>;
 
 export type CompanyAnalytics = Record<string, unknown>;
+
+// ── Phase 9: Autonomous Startup Engine ──
+
+export type MissionStatus =
+  | "draft"
+  | "analyzing"
+  | "planned"
+  | "active"
+  | "paused"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type StrategicPlanStatus = "draft" | "active" | "superseded" | "cancelled";
+export type StartupPlanStatus =
+  | "draft"
+  | "under_review"
+  | "approved"
+  | "bootstrapping"
+  | "active"
+  | "paused"
+  | "completed"
+  | "cancelled";
+export type ProductStatus =
+  | "idea"
+  | "discovery"
+  | "validation"
+  | "planning"
+  | "building"
+  | "testing"
+  | "ready_for_launch"
+  | "launched"
+  | "measuring"
+  | "iterating"
+  | "paused"
+  | "retired";
+export type StartupProjectStatus =
+  | "planned"
+  | "active"
+  | "blocked"
+  | "completed"
+  | "cancelled";
+export type ExecutionPlanStatus =
+  | "draft"
+  | "ready"
+  | "running"
+  | "blocked"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type OperatingCycleStatus =
+  | "initializing"
+  | "observing"
+  | "assessing"
+  | "planning"
+  | "awaiting_approval"
+  | "executing"
+  | "verifying"
+  | "measuring"
+  | "replanning"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "cancelled";
+export type LessonType =
+  | "lesson"
+  | "decision_outcome"
+  | "failed_assumption"
+  | "success_pattern"
+  | "process_improvement"
+  | "strategic_insight";
+export type ApprovalGateType =
+  | "mission_approval"
+  | "strategy_approval"
+  | "company_bootstrap_approval"
+  | "workforce_approval"
+  | "budget_approval"
+  | "product_launch_approval"
+  | "high_risk_action_approval"
+  | "major_strategic_change_approval";
+export type ApprovalGateStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled";
+export type MissionGraphRelation =
+  | "derived_from"
+  | "depends_on"
+  | "assigned_to"
+  | "executed_by"
+  | "measured_by"
+  | "blocked_by"
+  | "generated_by"
+  | "improves"
+  | "triggers";
+export type AutonomyLevel =
+  | "manual"
+  | "assisted"
+  | "bounded_autonomy"
+  | "high_autonomy";
+
+/** A startup mission — the top of the traceability graph. */
+export interface Mission {
+  id: string;
+  company_id: string;
+  title: string;
+  description: string | null;
+  mission_statement: string;
+  desired_outcome: string | null;
+  target_market: string | null;
+  constraints: unknown;
+  assumptions: unknown;
+  success_criteria: unknown;
+  strategic_context: unknown;
+  priority: number;
+  status: MissionStatus;
+  analysis: MissionAnalysisResult | null;
+  validation: ValidationResult | null;
+  owner_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface MissionInput {
+  company_id: string;
+  title: string;
+  description?: string | null;
+  mission_statement: string;
+  desired_outcome?: string | null;
+  target_market?: string | null;
+  constraints?: string[];
+  assumptions?: string[];
+  success_criteria?: string[];
+  strategic_context?: Record<string, unknown> | null;
+  priority?: number;
+  owner_id?: string | null;
+}
+
+export interface MissionAnalysisResult {
+  objectives: string[];
+  target_market: string | null;
+  problem: string | null;
+  proposed_solution: string | null;
+  constraints: string[];
+  timeline: string | null;
+  success_criteria: string[];
+  assumptions: string[];
+  risks: string[];
+  unknowns: string[];
+  required_capabilities: string[];
+  analyzer: string;
+}
+
+export interface ValidationIssue {
+  code: string;
+  message: string;
+  severity: string;
+}
+
+export interface ValidationResult {
+  ok: boolean;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+}
+
+/** Strategic plan — vision, objectives, and the "how". */
+export interface StrategicPlan {
+  id: string;
+  mission_id: string;
+  vision: string | null;
+  objectives: unknown;
+  priorities: unknown;
+  expected_outcomes: unknown;
+  assumptions: unknown;
+  risks: unknown;
+  milestones: unknown;
+  dependencies: unknown;
+  capabilities: unknown;
+  resource_estimates: unknown;
+  success_metrics: unknown;
+  status: StrategicPlanStatus;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface StartupPlanInput {
+  mission_id: string;
+  strategic_plan_id?: string | null;
+  business_objectives?: unknown[];
+  product_objectives?: unknown[];
+  market_objectives?: unknown[];
+  organization_objectives?: unknown[];
+  operational_objectives?: unknown[];
+  milestones?: unknown[];
+  departments?: unknown[];
+  roles?: unknown[];
+  capabilities?: string[];
+  initial_products?: Record<string, unknown>[];
+  initial_projects?: Record<string, unknown>[];
+  kpi_targets?: Record<string, unknown>;
+  budget_allocation?: Record<string, unknown>;
+  execution_priorities?: string[];
+  approval_requirements?: unknown[];
+}
+
+export interface StartupPlan {
+  id: string;
+  mission_id: string;
+  strategic_plan_id: string | null;
+  business_objectives: unknown;
+  product_objectives: unknown;
+  market_objectives: unknown;
+  organization_objectives: unknown;
+  operational_objectives: unknown;
+  milestones: unknown;
+  departments: unknown;
+  roles: unknown;
+  capabilities: unknown;
+  initial_products: unknown;
+  initial_projects: unknown;
+  kpi_targets: unknown;
+  budget_allocation: unknown;
+  execution_priorities: unknown;
+  approval_requirements: unknown;
+  status: StartupPlanStatus;
+  review: unknown;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface Product {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string | null;
+  product_type: string | null;
+  target_users: unknown;
+  value_proposition: string | null;
+  status: ProductStatus;
+  owner_id: string | null;
+  strategic_priority: number;
+  budget: unknown;
+  success_metrics: unknown;
+  launch_criteria: unknown;
+  validation: unknown;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ProductInput {
+  company_id: string;
+  name: string;
+  description?: string | null;
+  product_type?: string | null;
+  target_users?: string[];
+  value_proposition?: string | null;
+  owner_id?: string | null;
+  strategic_priority?: number;
+  budget?: Record<string, unknown> | null;
+  success_metrics?: string[];
+  launch_criteria?: string[];
+}
+
+export interface StartupProject {
+  id: string;
+  company_id: string;
+  product_id: string | null;
+  department_id: string | null;
+  name: string;
+  description: string | null;
+  objective: string | null;
+  owner_id: string | null;
+  status: StartupProjectStatus;
+  priority: number;
+  budget: unknown;
+  milestones: unknown;
+  dependencies: unknown;
+  success_criteria: unknown;
+  start_date: string | null;
+  deadline: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface StartupProjectInput {
+  company_id: string;
+  name: string;
+  description?: string | null;
+  objective?: string | null;
+  product_id?: string | null;
+  department_id?: string | null;
+  owner_id?: string | null;
+  status?: StartupProjectStatus;
+  priority?: number;
+  budget?: Record<string, unknown> | null;
+  milestones?: Record<string, unknown>[];
+  dependencies?: Record<string, unknown>[];
+  success_criteria?: string[];
+  start_date?: string | null;
+  deadline?: string | null;
+  goal_id?: string | null;
+}
+
+export interface OperatingCycle {
+  id: string;
+  company_id: string;
+  mission_id: string | null;
+  startup_plan_id: string | null;
+  cycle_number: number;
+  status: OperatingCycleStatus;
+  stages: CycleStage[];
+  state_snapshot_id: string | null;
+  decisions: Record<string, unknown>[];
+  actions: Record<string, unknown>[];
+  kpis: Record<string, unknown>[];
+  failures: Record<string, unknown>[];
+  recovery: Record<string, unknown>[];
+  approvals: Record<string, unknown>[];
+  resource_usage: unknown;
+  outcome: Record<string, unknown>;
+  started_at: string | null;
+  ended_at: string | null;
+}
+
+export interface CycleStage {
+  stage: string;
+  status?: string;
+  started_at?: string | null;
+  ended_at?: string | null;
+  duration_ms?: number | null;
+  inputs?: unknown;
+  outputs?: unknown;
+  details?: Record<string, unknown>;
+}
+
+export interface CompanyStateSnapshot {
+  id: string | null;
+  company_id: string;
+  overall_score: number;
+  dimensions: Record<string, number>;
+  explanations: Record<string, string>;
+  computed_at: string | null;
+  metrics?: Record<string, unknown>;
+}
+
+export interface ApprovalGate {
+  id: string;
+  company_id: string;
+  gate_type: ApprovalGateType;
+  risk_level: string;
+  requested_action: unknown;
+  rationale: string | null;
+  affected_entities: unknown;
+  resource_impact: unknown;
+  requester_id: string | null;
+  approver_id: string | null;
+  status: ApprovalGateStatus;
+  decided_at: string | null;
+  expiration: string | null;
+  created_at: string | null;
+}
+
+export interface StartupFeedback {
+  id: string;
+  company_id: string;
+  mission_id: string | null;
+  objective_type: unknown;
+  source: string | null;
+  category: string;
+  observation: string;
+  impact: string | null;
+  confidence: number;
+  recommendation: string | null;
+  related_goal_id: string | null;
+  related_project_id: string | null;
+  related_product_id: string | null;
+  created_at: string | null;
+}
+
+export interface StartupFeedbackInput {
+  category: string;
+  observation: string;
+  mission_id?: string | null;
+  source?: string | null;
+  impact?: string | null;
+  confidence?: number;
+  recommendation?: string | null;
+  objective_type?: Record<string, unknown> | null;
+  related_goal_id?: string | null;
+  related_project_id?: string | null;
+  related_product_id?: string | null;
+}
+
+export interface Lesson {
+  id: string;
+  company_id: string;
+  mission_id: string | null;
+  lesson_type: LessonType;
+  title: string;
+  content: string;
+  source: unknown;
+  created_at: string | null;
+}
+
+export interface MissionGraphEdge {
+  id: string;
+  company_id: string;
+  source_type: string;
+  source_id: string;
+  target_type: string;
+  target_id: string;
+  relation: MissionGraphRelation;
+  metadata: unknown;
+  created_at: string | null;
+}
+
+export interface MissionGraph {
+  edges: MissionGraphEdge[];
+  total: number;
+}
+
+export interface MissionTrace {
+  origin: { type: string; id: string };
+  chain: Array<{
+    from: { type: string; id: string };
+    to: { type: string; id: string };
+    relation: string;
+    metadata: unknown;
+  }>;
+  reached_mission: boolean;
+}
+
+export interface AutonomyPolicy {
+  company_id: string;
+  autonomy_level: AutonomyLevel;
+  allow_matrix: Record<string, string>;
+  never_allowed: string[];
+  max_employees: number | null;
+  max_departments: number | null;
+  max_budget: number | null;
+  max_concurrent_work: number | null;
+  max_provisioning_rate: number | null;
+  require_approval_for: string[];
+}
+
+export interface AutonomyPolicyInput {
+  autonomy_level?: AutonomyLevel;
+  allow_matrix?: Record<string, string>;
+  max_employees?: number;
+  max_departments?: number;
+  max_budget?: number;
+  max_concurrent_work?: number;
+  max_provisioning_rate?: number;
+  require_approval_for?: string[];
+  approved_gate_id?: string | null;
+}
+
+export interface ResourceAllocation {
+  id: string;
+  company_id: string;
+  target_type: string;
+  target_id: string;
+  resource_type: string;
+  amount: number;
+  unit: string | null;
+  purpose: unknown;
+  actor: string;
+  created_at: string | null;
+}
+
+export interface PriorityDecision {
+  id: string;
+  company_id: string;
+  target_type: string;
+  target_id: string;
+  score: unknown;
+  factors: unknown;
+  reason: string | null;
+  created_at: string | null;
+}
+
+export interface ReplanDecision {
+  trigger: string;
+  response: string;
+  reason: string;
+  actions: Record<string, unknown>[];
+  requires_approval: boolean;
+}
+
+export interface ReplanAction {
+  decision: ReplanDecision;
+  applied: Record<string, unknown>[];
+}
+
+/** Composed next-actions view for the startup overview. */
+export interface NextActions {
+  company_id: string;
+  state: CompanyStateSnapshot;
+  pending_approvals: ApprovalGate[];
+  pending_approval_count: number;
+  latest_cycle: OperatingCycle | null;
+  recent_feedback: StartupFeedback[];
+  needs_attention: boolean;
+}
+
+/** Result of `plan_mission` — the derived strategic + startup plan ids. */
+export interface MissionPlanResult {
+  mission_id: string;
+  status: string;
+  strategic_plan_id: string;
+  startup_plan_id: string;
+}

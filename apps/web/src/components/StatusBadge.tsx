@@ -2,6 +2,8 @@ import type {
   AgentStatus,
   AlertSeverity,
   AlertStatus,
+  ApprovalGateType,
+  AutonomyLevel,
   CompanyStatus,
   DecisionStatus,
   DepartmentStatus,
@@ -13,7 +15,12 @@ import type {
   HealthStatus,
   KpiTrend,
   MemoryType,
+  MissionStatus,
+  OperatingCycleStatus,
+  ProductStatus,
   RiskStatus,
+  StartupPlanStatus,
+  StrategicPlanStatus,
   StepExecutionStatus,
   TaskStatus,
   WorkflowExecutionStatus,
@@ -42,6 +49,14 @@ type BadgeStatus =
   | AlertStatus
   | KpiTrend
   | HealthStatus
+  // ── Phase 9: Autonomous Startup Engine statuses ──
+  | MissionStatus
+  | StrategicPlanStatus
+  | StartupPlanStatus
+  | ProductStatus
+  | OperatingCycleStatus
+  | AutonomyLevel
+  | ApprovalGateType
   | "expired"
   | "created"
   | "planning"
@@ -184,6 +199,40 @@ const COLORS: Record<BadgeStatus, string> = {
   declining: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
   flat: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
   improving: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  // ── Phase 9: Autonomous Startup Engine statuses ──
+  blocked: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  validation: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  analyzing: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  superseded: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  under_review: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  bootstrapping: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+  idea: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  discovery: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+  building: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  testing: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+  ready_for_launch: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+  launched: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  measuring: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  iterating: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
+  retired: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  initializing: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  observing: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+  assessing: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  awaiting_approval: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  executing: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  verifying: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+  high_autonomy: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  bounded_autonomy: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  assisted: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+  manual: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  mission_approval: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  strategy_approval: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+  company_bootstrap_approval: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  workforce_approval: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
+  budget_approval: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  product_launch_approval: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  high_risk_action_approval: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  major_strategic_change_approval: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
 };
 
 /** Small colored pill that renders a status value with normalized casing. */
