@@ -164,6 +164,14 @@ def validate_workflow_steps(
             if duration is None:
                 errors.append(f"Step {step.name!r} (delay): duration is required in configuration")
 
+        elif step_type == WorkflowStepType.EXTERNAL_ACTION:
+            # Phase 10: governed external capability call.
+            for key in ("company_id", "integration_id", "capability"):
+                if not config.get(key):
+                    errors.append(
+                        f"Step {step.name!r} (external_action): {key} is required in configuration"
+                    )
+
         # Timeout validation.
         if step.timeout_seconds is not None and step.timeout_seconds <= 0:
             errors.append(f"Step {step.name!r}: timeout_seconds must be > 0")

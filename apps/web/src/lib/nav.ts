@@ -19,6 +19,8 @@ import {
   TrendingUp,
   Users,
   Wrench,
+  Globe,
+  MonitorSmartphone,
 } from "lucide-react";
 
 export interface NavItem {
@@ -49,6 +51,11 @@ export const NAV_SECTIONS: NavItem[] = [
   { href: "/escalations", label: "Escalations", description: "Human-in-the-loop review of executions that could not recover safely.", icon: Bell },
   { href: "/activity", label: "Activity", description: "A live feed of agent actions, tool calls, and system events.", icon: Activity },
   { href: "/approvals", label: "Approvals", description: "Actions awaiting human review before execution proceeds.", icon: ShieldCheck },
+  // ── Phase 10: External Integrations & Computer Use ──
+  { href: "/integrations", label: "External Integrations", description: "Governed external integrations — connections, capabilities, external-action journal, and events.", icon: Network },
+  { href: "/integrations/actions", label: "External Actions", description: "The external-action journal — risk, approval, execution, verification, and recovery timeline.", icon: Activity },
+  { href: "/browser", label: "Browser Use", description: "Bounded simulated browser sessions with structured untrusted observations and domain policy.", icon: Globe },
+  { href: "/computer", label: "Computer Use", description: "Bounded simulated desktop sessions with sensitive purchase-path approval.", icon: MonitorSmartphone },
   { href: "/settings", label: "Settings", description: "Workforce, provider, security, and infrastructure configuration.", icon: Settings },
 ];
 

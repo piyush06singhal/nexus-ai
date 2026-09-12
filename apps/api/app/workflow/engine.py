@@ -533,6 +533,8 @@ class WorkflowEngine:
             return self._run_orchestration_step(step, config, resolved_input)
         if step_type == WorkflowStepType.EMPLOYEE_TASK.value:
             return self._run_employee_task_step(step, config, resolved_input, timeout)
+        if step_type == WorkflowStepType.EXTERNAL_ACTION.value:
+            return self._run_external_action_step(step, config, resolved_input, timeout)
 
         raise ValidationError(f"Unknown step type: {step_type!r}")
 
@@ -800,6 +802,86 @@ class WorkflowEngine:
             "summary": output_data.get("summary", ""),
             "output": output_data.get("output", {}),
             "confidence": output_data.get("confidence"),
+        }
+
+    def _run_external_action_step(
+        self,
+        step: WorkflowStep,
+        config: dict[str, Any],
+        resolved_input: dict[str, Any],
+        timeout: int | None,
+    ) -> dict[str, Any]:
+        """Run a governed external capability call (Phase 10 §28).
+
+        Config::
+
+            {
+                "company_id": "<uuid>",
+                "integration_id": "<uuid>",
+                "capability": "email.send_message",
+                "payload": {...},              // static payload
+                "connection_id": "<optional>", // or connection_ref
+                "approved_gate_id": "<optional — operator resume>",
+                "idempotency_key": "<optional>"
+            }
+
+        The call runs through :class:`ExternalActionManager`, so permission →
+        policy → risk → autonomy → approval → execute → verify → recover →
+        audit is identical to a direct API/tool call. An awaiting-approval
+        outcome fails the step with the gate id so the operator can approve
+        and re-run with ``approved_gate_id``.
+        """
+        company_id_str = config.get("company_id")
+        integration_id_str = config.get("integration_id")
+        capability = config.get("capability")
+        if not company_id_str or not integration_id_str or not capability:
+            raise ValidationError(
+                f"Step {step.name!r}: EXTERNAL_ACTION requires company_id, "
+                "integration_id and capability in configuration"
+            )
+
+        from app.external.action import ExternalActionManager
+        from app.external.result import ExternalActionError
+
+        payload = dict(config.get("payload") or {})
+        payload.update(resolved_input)
+        approved_gate_str = config.get("approved_gate_id") or None
+        connection_ref = config.get("connection_id") or config.get("connection_ref")
+
+        manager = ExternalActionManager(self._db)
+        try:
+            action = manager.create(
+                company_id=UUID(str(company_id_str)),
+                integration_id=UUID(str(integration_id_str)),
+                capability=capability,
+                payload=payload,
+                connection_id=UUID(str(connection_ref)) if connection_ref else None,
+                idempotency_key=config.get("idempotency_key"),
+                approved_gate_id=UUID(str(approved_gate_str)) if approved_gate_str else None,
+            )
+        except ExternalActionError as exc:
+            if exc.status == "awaiting_approval" or (exc.code or "") == "approval_required":
+                raise WorkflowEngineError(
+                    f"Step {step.name!r}: external action {capability!r} requires "
+                    "human approval (create a gate, approve it, then re-run the "
+                    f"workflow with approved_gate_id). Action parked: {exc.message}"
+                ) from exc
+            raise WorkflowEngineError(
+                f"Step {step.name!r}: external action {capability!r} failed: {exc.message}"
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 - integration errors surface as step failures
+            raise WorkflowEngineError(
+                f"Step {step.name!r}: external action {capability!r} errored: {exc}"
+            ) from exc
+
+        result_status = action.status.value if action.status else "unknown"
+        return {
+            "external_action_id": str(action.id),
+            "capability": capability,
+            "result_status": result_status,
+            "result": json.loads(action.result) if action.result else None,
+            "external_operation_id": action.external_operation_id,
+            "approval_gate_id": str(action.approval_gate_id) if action.approval_gate_id else None,
         }
 
     @staticmethod

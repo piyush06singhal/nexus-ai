@@ -106,7 +106,36 @@ type BadgeStatus =
   | "resource_limit"
   | "verification_failure"
   | "system_failure"
-  | "unknown";
+  | "unknown"
+  // ── Phase 10: External Integrations & Computer Use ──
+  | "connected"
+  | "disconnected"
+  | "revoked"
+  | "expired"
+  | "configuring"
+  | "available"
+  | "error"
+  | "suspended"
+  | "requested"
+  | "authorized"
+  | "not_required"
+  | "low"
+  | "medium"
+  | "high"
+  | "reversible"
+  | "partially_reversible"
+  | "irreversible"
+  | "verified"
+  | "unverified"
+  | "processed"
+  | "signature_ok"
+  | "signature_invalid"
+  | "authentication_failed"
+  | "permission_failed"
+  | "rate_limited"
+  | "service_unavailable"
+  | "invalid_configuration"
+  | "not_configured";
 
 const COLORS: Record<BadgeStatus, string> = {
   draft: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
@@ -233,6 +262,33 @@ const COLORS: Record<BadgeStatus, string> = {
   product_launch_approval: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
   high_risk_action_approval: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
   major_strategic_change_approval: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  external_action_approval: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  // ── Phase 10: External Integrations & Computer Use ──
+  connected: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  disconnected: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  revoked: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  configuring: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  error: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  requested: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+  authorized: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  not_required: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  low: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  high: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  reversible: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  partially_reversible: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  irreversible: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  verified: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  unverified: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
+  processed: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+  signature_ok: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  signature_invalid: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  authentication_failed: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  permission_failed: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+  rate_limited: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+  service_unavailable: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  invalid_configuration: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  not_configured: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
 /** Small colored pill that renders a status value with normalized casing. */

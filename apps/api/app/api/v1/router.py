@@ -11,7 +11,9 @@ from app.api.v1.endpoints import (
     agents,
     alerts,
     autonomy,
+    browser,
     companies,
+    computer,
     decisions,
     departments,
     employee_templates,
@@ -19,8 +21,11 @@ from app.api.v1.endpoints import (
     escalations,
     evaluations,
     executions,
+    external_actions,
+    external_events,
     goals,
     health,
+    integrations,
     memories,
     missions,
     orchestrations,
@@ -34,6 +39,7 @@ from app.api.v1.endpoints import (
     tasks,
     tools,
     verifications,
+    webhooks,
     workflows,
 )
 
@@ -67,3 +73,10 @@ api_router.include_router(startup.router)
 api_router.include_router(products.router)
 api_router.include_router(startup_projects.router)
 api_router.include_router(autonomy.router)
+# Phase 10 — External Integrations & Computer Use
+api_router.include_router(integrations.router)
+api_router.include_router(external_actions.router)
+api_router.include_router(browser.router)
+api_router.include_router(computer.router)
+api_router.include_router(external_events.router)
+api_router.include_router(webhooks.router)

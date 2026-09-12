@@ -303,7 +303,35 @@ The engine **composes** Phases 1–8 — it does NOT create a second execution, 
 - **Database** (migration `0011_autonomous_startup_engine`, additive) — 19 tables: `missions`, `strategic_plans`, `startup_plans`, `organizational_blueprints`, `workforce_plans`, `products`, `startup_projects`, `execution_plans`, `operating_cycles`, `company_state_snapshots`, `startup_feedback`, `startup_lessons`, `approval_gates`, `mission_graph_edges`, `autonomy_policies`, `resource_allocations`, `priority_decisions`. Enums via `StrEnum` convention.
 - **API** — 6 routers: `/missions` (CRUD + analyze/validate/plan/activate/pause/cancel + graph/trace), `/startup-plans` (CRUD + validate/approve/bootstrap/execute), `/startup/{company_id}/cycles` (+ execute/approve/cancel) and `replan`/`state`/`next-actions`/`feedback`, `/products`, `/startup-projects`, `/autonomy/{company_id}` (policy + approval-gates). Company/mission scoping is always a **query parameter**.
 - **Frontend** — 13 pages under `/startup` via a client `StartupShell` context (localStorage company selection, plan→mission mapping); legacy `/missions` redirects.
-- **Scope guard** — no unrestricted autonomy, no autonomous finance/hiring/firing, no self-modification, no external/browser actions; approval gates authorize one action, once; deterministic by default (MockProvider CI); `MAX_*` limits configurable in `Settings`. Phase 10 not started.
+- **Scope guard** — no unrestricted autonomy, no autonomous finance/hiring/firing, no self-modification, no external/browser actions (that envelope is Phase 10, separately governed); approval gates authorize one action, once; deterministic by default (MockProvider CI); `MAX_*` limits configurable in `Settings`.
+
+### 3.14 External Integration Layer (Phase 10)
+
+The **governed** boundary between NEXUS and external software/websites/APIs/files/email/calendars/computers. See [docs/phase-10-external-integrations.md](phase-10-external-integrations.md) for the full reference.
+
+```text
+agents/workflows/orchestrations/demos
+        │  capability tools (Phase 2 registry: {provider}.{capability})
+        ▼
+ExternalActionManager.create ── single choke point
+   risk → policy → AutonomyService.decision("external_action")
+        → EXTERNAL_ACTION_APPROVAL gate → bounded adapter
+        → scrub → VerificationService → RecoveryService → MemoryService → OrgEventLogger
+        │
+        ▼
+external_actions (immutable journal)  ·  external_events (webhooks)  ·  browser/computer sessions
+```
+
+- **Compose over everything.** `ExternalActionManager` reuses the Phase 2 Tool Registry (capability tools), Phase 6 Verification/Recovery, Phase 4 Memory, Phase 8 PolicyResolver/BudgetManager/OrgEventLogger, and Phase 9 AutonomyService/ApprovalGateManager (`gate_type="external_action_approval"`). There is **no second** tool, memory, verification, recovery, policy, approval, or event system.
+- **Integration layer** (`app/external/`) — provider-agnostic `IntegrationProvider` protocol + registry (`registry.py`); provider instances are company-scoped (`IntegrationService`, `core/integration.py`) with materialized `integration_capabilities`. Providers: Email, Calendar, Development, Web Research (deterministic mocks), and Generic HTTP Connector (**off by default**). `SecureHTTPClient` wraps httpx with SSRF-revalidation of every redirect hop, size caps, timeouts, retry/backoff, rate limiting, and a circuit breaker.
+- **External-action funnel** (`core/action.py`) — the immutable journal: `REQUESTED → risk (RiskClassifier) → ExternalPolicyResolver (most-restrictive-wins) → AutonomyService (external_action unlisted ⇒ require-approval by default) → gate|auto → execute (timeout/size-bounded) → scrub → verify → recover → memory → audit`. Idempotency key + `external_operation_id` block duplicate SUCCEEDED effects; one approved gate authorizes exactly one action, once (`gate_used`/409).
+- **Reference-only credentials** (`credential.py` + `external_credentials`) — an opaque reference + masked suffix only; secrets resolved at use from operator env (`INTEGRATION_*_SECRET`) or a one-shot value used-and-discarded; a global `redact_secrets()` scrubber keeps secret patterns out of responses, logs, DB, and memory (asserted in tests).
+- **Browser & computer use** (`browser/`, `computer/`) — provider-agnostic driver protocols over deterministic in-repo mock drivers. Bounded sessions (per-company and per-session `MAX_*` limits), structured size-limited observations tagged `content_type: EXTERNAL_UNTRUSTED_CONTENT` (§65), domain policy for browser, sensitive purchase-path actions routed to an approval gate for computer (§67; simulator never performs payments). Observations are data, never instructions — the §66 malicious-injection fixture page and its test pin the invariant.
+- **Security model** (`api/ssrf.py`, `security/`) — SSRF guard (loopback/private/link-local/metadata ranges, redirect re-validation, DNS where practical), data-exfiltration classification (`external_outbound_class`), signed + timestamp-windowed webhooks with replay protection, cross-company 404 isolation, and `MAX_*` settings caps.
+- **Database** (migration `0012_external_integrations`, additive) — 14 tables: `external_integrations`, `integration_connections`, `integration_capabilities`, `external_credentials` (no plaintext), `external_actions` + `external_action_attempts`, `external_events`, `browser_sessions/actions/observations`, `computer_sessions/actions/observations`, `integration_policies`, `domain_allowlists`. `external_actions.approval_gate_id` FKs the existing `approval_gates`.
+- **API** — 6 routers: `/integrations`, `/external-actions` (+ `/dashboard`), `/browser/sessions`, `/computer/sessions`, `/external-events`, `/webhooks/{provider}/events`. A `WorkflowStepType.EXTERNAL_ACTION` step runs one governed capability through the Phase 3 engine.
+- **Frontend** — route group `src/app/(external)/` under an `ExternalShell` context: `/integrations` (dashboard + detail + connections + actions journal + events), `/browser` (+ session detail), `/computer` (+ session detail). Pending external-action gates approve/reject on the Integrations dashboard; `StatusBadge` extended.
+- **Scope guard** — §83 DO-NOT-IMPLEMENT absolute (no unrestricted browser/computer/shell/network, no autonomous finance/trading/legal/hiring/firing/payments/cloud mutation, no CAPTCHA/auth bypass); Phase 11 boundary explicitly not started.
 
 ---
 

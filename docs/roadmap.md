@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–9 are complete. Phase 10+ are planned.**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–10 are complete. Phase 11+ are planned.**
 
 ---
 
@@ -164,14 +164,29 @@ The mission-driven engine **above** the Company Layer: a mission becomes a strat
 
 **Exit criteria (met):** a mission can be planned into a governed startup (plan → approve → bootstrap), the operating engine drives the 10-stage cycle through verification and recovery with shared infrastructure, every artifact is traceable to its mission via the mission graph, all autonomous actions respect the per-company autonomy policy (`allow / require_approval / block`) and global `MAX_*` limits, high-impact actions park at human approval gates that grant exactly one action once, feedback drives bounded replanning, cross-company access is 404-isolated, and everything runs deterministically without paid APIs.
 
-## Phase 10 — Evaluation, Security & Production Hardening
+## Phase 10 — External Integrations & Computer Use
 
-- Agent/task evaluation harnesses.
-- Environment isolation, sandboxing, and side-effect containment.
+- **Integration layer** — provider-agnostic `IntegrationProvider` protocol + registry; deterministic mock providers (Email, Calendar, Development, Web Research) and a **disabled-by-default** Generic HTTP Connector; company-scoped integration instances with materialized capability inventory (risk, reversibility, idempotency, approval-required).
+- **Capability tools through the Tool Registry (Rule 4)** — every provider capability registers as a Phase 2 `BaseTool` (`{provider}.{capability}`, e.g. `email.send_message`), `dangerous=True` on HIGH/CRITICAL, forwarding into the same governed funnel as direct calls.
+- **External-action funnel** — immutable journal (`external_actions` + attempts) with risk → policy (most-restrictive-wins over Phase 8 policies + `integration_policies` + domain allowlists) → `AutonomyService.decision("external_action")` (unlisted ⇒ require-approval by default) → `EXTERNAL_ACTION_APPROVAL` gate (one gate, one action, once) → bounded execution → result scrub → verification → recovery (reuses Phase 6 taxonomy/service) → memory (secrets never) → audit.
+- **Reference-only credentials** — `external_credentials` stores an opaque reference + masked suffix only; secrets resolved at use from operator env or one-shot (used and discarded); global redaction asserted in tests.
+- **Browser & computer use** — bounded simulated sessions/actions/observations; untrusted-observation labeling (§65) with a malicious-injection fixture (§66); domain policy for browser; a purchase-path approval gate for computer (§67); per-session `MAX_*` limits.
+- **SSRF, exfiltration, webhooks** — SSRF guard (loopback/private/metadata, redirect re-validation) on `SecureHTTPClient`; data-classification guard on outbound payloads; signed/timestamped/deduped webhook ingress.
+- **Frontend** — `/integrations` (+ detail, connections, actions journal, events), `/browser` (+ session detail), `/computer` (+ session detail) under an `ExternalShell`; pending external-action gates approve/reject on the Integrations dashboard; `StatusBadge` extended.
+- **Workflow integration** — `WorkflowStepType.EXTERNAL_ACTION` step run through the Phase 3 engine.
+- **Docs** — `docs/phase-10-external-integrations.md`.
+
+**Exit criteria (met):** every external action is governed (risk → policy → autonomy → approval → execution → verification → recovery → audit), credentials never stored/rendered/logged, high-risk capabilities require a human gate even under an allow matrix, idempotency blocks duplicate external effects, browser/computer sessions are bounded and treat content as untrusted, SSRF/prompt-injection/exfiltration/webhook protections are tested (§66/§67 fixtures), cross-company reads are 404-isolated, and the three deterministic demos (§68–70) run end to end. 13 external test files added on top of the full Phase 0–9 regression; frontend route group builds with lint/tsc/tests green.
+
+## Phase 11 — Production Hardening, Security & Governance
+
+- Real secrets-management backend (operator env/one-shot abstraction → managed vault).
+- Real browser automation (Playwright) and real provider adapters (SMTP, calendar, HTTP) behind operator credentials.
+- Enterprise RBAC, advanced security, governance, and compliance controls.
 - Scale-out, deployment (Kubernetes), and production observability.
 - Monetization / multi-tenant hooks.
 
-**Exit criteria:** production-ready reliability, security, and cost controls for real workloads. Phase 10 is **not started** — Phase 9's autonomy model is deliberately bounded so widening the envelope (external/browser/computer-use integrations) is a future, documented, gated change.
+**Exit criteria:** production-ready reliability, security, and cost controls for real workloads. Phase 11 is **not started** — Phase 10's external layer is deliberately bounded and governed; widening to real automation, managed secrets, and enterprise controls is a future, documented, gated change (spec §84).
 
 ---
 

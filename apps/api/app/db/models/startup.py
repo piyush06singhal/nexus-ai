@@ -172,6 +172,10 @@ class ApprovalGateType(StrEnum):
     PRODUCT_LAUNCH_APPROVAL = "product_launch_approval"
     HIGH_RISK_ACTION_APPROVAL = "high_risk_action_approval"
     MAJOR_STRATEGIC_CHANGE_APPROVAL = "major_strategic_change_approval"
+    # Phase 10: human gate over a high/irreversible external action. A single
+    # approved EXTERNAL_ACTION_APPROVAL gate authorizes exactly one external
+    # action, once (python-only value; VARCHAR storage — no migration needed).
+    EXTERNAL_ACTION_APPROVAL = "external_action_approval"
 
 
 class ApprovalGateStatus(StrEnum):

@@ -24,6 +24,10 @@ from app.startup.events import StartupEventLogger, StartupEvents
 _DEFAULT_EXPIRATION_DAYS = 7
 
 
+class ApprovalGateVerificationError(ValueError):
+    """A specific approval gate failed verification for a sensitive action."""
+
+
 class ApprovalGateManager:
     """Create, resolve, and list human approval gates."""
 
@@ -100,6 +104,40 @@ class ApprovalGateManager:
         gate = self.get(company_id, gate_id)
         if gate is None:
             raise ValueError("Approval gate not found")
+        return gate
+
+    def verify_approved(
+        self,
+        company_id: UUID,
+        gate_id: UUID,
+        *,
+        gate_type: ApprovalGateType | str = "external_action_approval",
+        action: str = "",
+    ) -> ApprovalGate:
+        """Verify a *specific* approved gate for one action — no blanket grant.
+
+        This is the single-use early check used by the Phase 10 browser/computer
+        session managers before a sensitive action runs: the operator approved
+        this exact gate, of this type, for this company. It does not consume the
+        gate (the external action funnel's ``_verify_gate`` marks consumption);
+        it only refuses when the gate is missing, foreign-company, wrong-type or
+        not yet approved.
+        """
+        gate = self.get(company_id, gate_id)
+        if gate is None:
+            raise ApprovalGateVerificationError(
+                f"Approval gate {gate_id} not found for the requesting company"
+            )
+        expected = ApprovalGateType(gate_type)
+        if gate.gate_type != expected:
+            raise ApprovalGateVerificationError(
+                f"Gate {gate_id} is {gate.gate_type.value}, not {expected.value}"
+            )
+        if gate.status != ApprovalGateStatus.APPROVED:
+            raise ApprovalGateVerificationError(
+                f"Approval gate {gate_id} is {gate.status.value}; it must be approved first "
+                f"for action {action or 'this action'}"
+            )
         return gate
 
     def approve(

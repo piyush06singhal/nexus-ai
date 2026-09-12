@@ -53,6 +53,7 @@ class WorkflowStepType(StrEnum):
     DELAY = "delay"
     ORCHESTRATION = "orchestration"
     EMPLOYEE_TASK = "employee_task"
+    EXTERNAL_ACTION = "external_action"  # Phase 10: governed external capability call
 
 
 class WorkflowExecutionStatus(StrEnum):

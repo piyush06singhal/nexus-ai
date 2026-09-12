@@ -120,6 +120,41 @@ class Settings(BaseSettings):
         True  # deny high-risk autonomous actions without a gate
     )
 
+    # Computer Use & External Integrations (Phase 10)
+    # Governed external interaction boundaries. Every external action, browser or
+    # computer session, and webhook ingest is bounded here; anything beyond a
+    # limit is refused (approval gate or explicit hard block). These mirror the
+    # §81 / §16 limits — no unbounded external behaviour anywhere.
+    external_action_timeout_seconds: int = 60
+    external_connect_timeout_seconds: int = 10
+    external_read_timeout_seconds: int = 30
+    max_external_actions: int = 500  # per company, hard ceiling on journaled actions
+    max_browser_sessions: int = 10  # concurrent per company
+    max_computer_sessions: int = 5  # concurrent per company
+    max_browser_actions: int = 200  # actions per browser session
+    max_computer_actions: int = 100  # actions per computer session
+    max_browser_session_duration_minutes: int = 30
+    max_computer_session_duration_minutes: int = 30
+    max_browser_navigations: int = 50  # navigations per browser session
+    max_page_size_bytes: int = 4096  # structured page observation size cap
+    max_external_payload_bytes: int = 16384  # external action result cap
+    max_webhook_payload_bytes: int = 16384
+    max_external_events: int = 1000  # per company, retained external events
+    external_rate_limit_per_minute: int = 60  # default per-provider rate limit
+    external_circuit_breaker_threshold: int = 5
+    external_circuit_breaker_reset_seconds: int = 30
+    default_external_risk_policy_json: str = "{}"  # default integration policies
+    ssrf_protection_enabled: bool = True
+    prompt_injection_protection_enabled: bool = True
+    external_workspace_root: str = ""  # empty ⇒ deterministic virtual workspace
+    external_generic_http_connector_enabled: bool = (
+        False  # arbitrary HTTP connector is off by default (§14)
+    )
+    external_webhook_hmac_secret: str = ""  # operator secret for signed webhooks (empty ⇒ 503)
+    external_outbound_class: str = (
+        "confidential"  # max data class allowed outward (§64 exfiltration)
+    )
+
     # Pydantic settings behaviour
     model_config = SettingsConfigDict(
         env_file=".env",

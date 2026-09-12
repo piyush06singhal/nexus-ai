@@ -124,6 +124,22 @@ import type {
   WorkflowTriggerInput,
   WorkflowValidationResult,
   WorkforceOverview,
+  // ── Phase 10: External Integrations & Computer Use ──
+  BrowserAction,
+  BrowserObservation,
+  BrowserSession,
+  ComputerAction,
+  ComputerObservation,
+  ComputerSession,
+  ConnectionTestResponse,
+  ExternalAction,
+  ExternalDashboard,
+  ExternalDomainRule,
+  ExternalEvent,
+  ExternalIntegration,
+  ExternalIntegrationPolicy,
+  IntegrationCapability,
+  IntegrationConnection,
 } from "@/lib/types";
 
 /**
@@ -1915,5 +1931,325 @@ export function rejectApprovalGate(
   return apiFetch<ApprovalGate>(
     apiUrl(`/autonomy/${companyId}/approval-gates/${gateId}/reject`),
     { method: "POST", body: JSON.stringify({ approver_id: approverId ?? null, rationale: rationale ?? null }) },
+  );
+}
+// ── Phase 10: External Integrations ------------------------------
+
+export function fetchIntegrations(
+  companyId: string,
+): Promise<ExternalIntegration[]> {
+  return apiFetch<ExternalIntegration[]>(apiUrl(`/integrations/${companyId}`));
+}
+
+export function createIntegration(
+  companyId: string,
+  input: { provider: string; name: string; description?: string },
+): Promise<ExternalIntegration> {
+  return apiFetch<ExternalIntegration>(apiUrl(`/integrations/${companyId}`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchIntegration(
+  companyId: string,
+  integrationId: string,
+): Promise<ExternalIntegration> {
+  return apiFetch<ExternalIntegration>(
+    apiUrl(`/integrations/${companyId}/${integrationId}`),
+  );
+}
+
+export function deleteIntegration(
+  companyId: string,
+  integrationId: string,
+): Promise<void> {
+  return apiFetch<void>(apiUrl(`/integrations/${companyId}/${integrationId}`), {
+    method: "DELETE",
+  });
+}
+
+export function fetchCapabilities(
+  companyId: string,
+  integrationId: string,
+): Promise<IntegrationCapability[]> {
+  return apiFetch<IntegrationCapability[]>(
+    apiUrl(`/integrations/${companyId}/${integrationId}/capabilities`),
+  );
+}
+
+export function createConnection(
+  companyId: string,
+  integrationId: string,
+  input: {
+    auth_method?: string;
+    secret_value?: string;
+    env_var_hint?: string;
+    scopes?: string[];
+    permissions?: string[];
+  },
+): Promise<IntegrationConnection> {
+  return apiFetch<IntegrationConnection>(
+    apiUrl(`/integrations/${companyId}/${integrationId}/connections`),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function fetchConnections(
+  companyId: string,
+  integrationId: string,
+): Promise<IntegrationConnection[]> {
+  return apiFetch<IntegrationConnection[]>(
+    apiUrl(`/integrations/${companyId}/${integrationId}/connections`),
+  );
+}
+
+export function testConnection(
+  companyId: string,
+  integrationId: string,
+  connectionId: string,
+): Promise<ConnectionTestResponse> {
+  return apiFetch<ConnectionTestResponse>(
+    apiUrl(
+      `/integrations/${companyId}/${integrationId}/connections/${connectionId}/test`,
+    ),
+    { method: "POST" },
+  );
+}
+
+export function revokeConnection(
+  companyId: string,
+  integrationId: string,
+  connectionId: string,
+): Promise<IntegrationConnection> {
+  return apiFetch<IntegrationConnection>(
+    apiUrl(
+      `/integrations/${companyId}/${integrationId}/connections/${connectionId}/revoke`,
+    ),
+    { method: "POST" },
+  );
+}
+
+export function fetchIntegrationPolicies(
+  companyId: string,
+): Promise<ExternalIntegrationPolicy[]> {
+  return apiFetch<ExternalIntegrationPolicy[]>(
+    apiUrl(`/integrations/${companyId}/policies`),
+  );
+}
+
+export function fetchDomainRules(
+  companyId: string,
+): Promise<ExternalDomainRule[]> {
+  return apiFetch<ExternalDomainRule[]>(
+    apiUrl(`/integrations/${companyId}/domains`),
+  );
+}
+
+// ── External actions journal ------------------------------
+
+export function createExternalAction(
+  companyId: string,
+  input: {
+    integration_id: string;
+    capability: string;
+    action_type?: string;
+    payload?: Record<string, unknown>;
+    connection_id?: string;
+    idempotency_key?: string;
+    employee_id?: string;
+    approved_gate_id?: string;
+  },
+): Promise<ExternalAction> {
+  return apiFetch<ExternalAction>(apiUrl(`/external-actions/${companyId}`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchExternalActions(
+  companyId: string,
+): Promise<ExternalAction[]> {
+  return apiFetch<ExternalAction[]>(apiUrl(`/external-actions/${companyId}`));
+}
+
+export function fetchExternalAction(
+  companyId: string,
+  actionId: string,
+): Promise<ExternalAction> {
+  return apiFetch<ExternalAction>(
+    apiUrl(`/external-actions/${companyId}/${actionId}`),
+  );
+}
+
+export function cancelExternalAction(
+  companyId: string,
+  actionId: string,
+): Promise<ExternalAction> {
+  return apiFetch<ExternalAction>(
+    apiUrl(`/external-actions/${companyId}/${actionId}/cancel`),
+    { method: "POST" },
+  );
+}
+
+export function fetchExternalDashboard(
+  companyId: string,
+): Promise<ExternalDashboard> {
+  return apiFetch<ExternalDashboard>(
+    apiUrl(`/external-actions/${companyId}/dashboard`),
+  );
+}
+
+// ── External events ------------------------------
+
+export function fetchExternalEvents(
+  companyId: string,
+): Promise<ExternalEvent[]> {
+  return apiFetch<ExternalEvent[]>(apiUrl(`/external-events/${companyId}`));
+}
+
+// ── Browser sessions ------------------------------
+
+export function fetchBrowserSessions(
+  companyId: string,
+): Promise<BrowserSession[]> {
+  return apiFetch<BrowserSession[]>(
+    apiUrl(`/browser/sessions/${companyId}`),
+  );
+}
+
+export function createBrowserSession(
+  companyId: string,
+  input?: { allowed_domains?: string[] },
+): Promise<BrowserSession> {
+  return apiFetch<BrowserSession>(apiUrl(`/browser/sessions/${companyId}`), {
+    method: "POST",
+    body: JSON.stringify(input ?? {}),
+  });
+}
+
+export function fetchBrowserSession(
+  companyId: string,
+  sessionId: string,
+): Promise<BrowserSession> {
+  return apiFetch<BrowserSession>(
+    apiUrl(`/browser/sessions/${companyId}/${sessionId}`),
+  );
+}
+
+export function runBrowserAction(
+  companyId: string,
+  sessionId: string,
+  input: {
+    action_type: string;
+    target?: Record<string, unknown>;
+    input?: Record<string, unknown>;
+    approved_gate_id?: string;
+  },
+): Promise<BrowserAction> {
+  return apiFetch<BrowserAction>(
+    apiUrl(`/browser/sessions/${companyId}/${sessionId}/actions`),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function pauseBrowserSession(
+  companyId: string,
+  sessionId: string,
+): Promise<BrowserSession> {
+  return apiFetch<BrowserSession>(
+    apiUrl(`/browser/sessions/${companyId}/${sessionId}/pause`),
+    { method: "POST" },
+  );
+}
+
+export function terminateBrowserSession(
+  companyId: string,
+  sessionId: string,
+): Promise<BrowserSession> {
+  return apiFetch<BrowserSession>(
+    apiUrl(`/browser/sessions/${companyId}/${sessionId}/terminate`),
+    { method: "POST" },
+  );
+}
+
+export function fetchBrowserObservations(
+  companyId: string,
+  sessionId: string,
+): Promise<BrowserObservation[]> {
+  return apiFetch<BrowserObservation[]>(
+    apiUrl(`/browser/sessions/${companyId}/${sessionId}/observations`),
+  );
+}
+
+// ── Computer sessions ------------------------------
+
+export function fetchComputerSessions(
+  companyId: string,
+): Promise<ComputerSession[]> {
+  return apiFetch<ComputerSession[]>(
+    apiUrl(`/computer/sessions/${companyId}`),
+  );
+}
+
+export function createComputerSession(
+  companyId: string,
+): Promise<ComputerSession> {
+  return apiFetch<ComputerSession>(apiUrl(`/computer/sessions/${companyId}`), {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function fetchComputerSession(
+  companyId: string,
+  sessionId: string,
+): Promise<ComputerSession> {
+  return apiFetch<ComputerSession>(
+    apiUrl(`/computer/sessions/${companyId}/${sessionId}`),
+  );
+}
+
+export function runComputerAction(
+  companyId: string,
+  sessionId: string,
+  input: {
+    action_type: string;
+    input?: Record<string, unknown>;
+    approved_gate_id?: string;
+  },
+): Promise<ComputerAction> {
+  return apiFetch<ComputerAction>(
+    apiUrl(`/computer/sessions/${companyId}/${sessionId}/actions`),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function pauseComputerSession(
+  companyId: string,
+  sessionId: string,
+): Promise<ComputerSession> {
+  return apiFetch<ComputerSession>(
+    apiUrl(`/computer/sessions/${companyId}/${sessionId}/pause`),
+    { method: "POST" },
+  );
+}
+
+export function terminateComputerSession(
+  companyId: string,
+  sessionId: string,
+): Promise<ComputerSession> {
+  return apiFetch<ComputerSession>(
+    apiUrl(`/computer/sessions/${companyId}/${sessionId}/terminate`),
+    { method: "POST" },
+  );
+}
+
+export function fetchComputerObservations(
+  companyId: string,
+  sessionId: string,
+): Promise<ComputerObservation[]> {
+  return apiFetch<ComputerObservation[]>(
+    apiUrl(`/computer/sessions/${companyId}/${sessionId}/observations`),
   );
 }

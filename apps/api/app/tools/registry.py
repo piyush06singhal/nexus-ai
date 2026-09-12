@@ -74,3 +74,13 @@ def _register_builtins() -> None:
 
 
 _register_builtins()
+
+
+# Phase 10 — register one tool per external provider capability. These are
+# plain BaseTools named ``{provider}.{capability}`` so agents call external
+# actions through the standard Phase 2 permission/execution path (§86 Rule 4).
+# Importing this module is side-effect free until the registry is used; the
+# generic HTTP connector stays off by default (no raw ``http_request`` tool).
+from app.external.tools import register_capability_tools as _register_capability_tools  # noqa: E402
+
+_register_capability_tools()

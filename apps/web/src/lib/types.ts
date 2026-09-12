@@ -1491,7 +1491,8 @@ export type ApprovalGateType =
   | "budget_approval"
   | "product_launch_approval"
   | "high_risk_action_approval"
-  | "major_strategic_change_approval";
+  | "major_strategic_change_approval"
+  | "external_action_approval";
 export type ApprovalGateStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled";
 export type MissionGraphRelation =
   | "derived_from"
@@ -1921,4 +1922,286 @@ export interface MissionPlanResult {
   status: string;
   strategic_plan_id: string;
   startup_plan_id: string;
+}
+// ── Phase 10: External Integrations & Computer Use ────────────────────────────
+
+export type ExternalRiskLevel = "low" | "medium" | "high" | "critical";
+export type Approvability = "not_required" | "required" | "pending" | "approved" | "rejected";
+
+export interface ExternalIntegration {
+  id: string;
+  company_id: string;
+  provider: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  category: string;
+  auth_type: string;
+  status: string;
+  configuration: unknown;
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface IntegrationCapability {
+  id: string;
+  integration_id: string;
+  name: string;
+  description: string | null;
+  capability_type: string;
+  risk_level: ExternalRiskLevel;
+  input_schema: unknown;
+  output_schema: unknown;
+  reversibility: string;
+  supports_idempotency: boolean;
+  approval_required: boolean;
+  required_permissions: unknown;
+  required_scopes: unknown;
+}
+
+export interface IntegrationConnection {
+  id: string;
+  integration_id: string;
+  company_id: string;
+  status: string;
+  auth_method: string;
+  credential_reference: string | null;
+  scopes: unknown;
+  permissions: unknown;
+  metadata: unknown;
+  last_used_at: string | null;
+  last_tested_at: string | null;
+  last_error_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface ConnectionTestResponse {
+  result: string;
+  message: string | null;
+  tested_at: string;
+}
+
+export interface CredentialRef {
+  id: string;
+  reference: string;
+  integration_id: string | null;
+  connection_id: string | null;
+  company_id: string;
+  provider: string;
+  kind: string;
+  masked_value: string;
+  env_var_hint: string | null;
+  scopes: unknown;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface ExternalActionAttempt {
+  id: string;
+  action_id: string;
+  attempt_number: number;
+  strategy: string | null;
+  status: string;
+  retryable: boolean;
+  error_category: string | null;
+  error: string | null;
+  request_id: string | null;
+  external_operation_id: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface ExternalAction {
+  id: string;
+  company_id: string;
+  integration_id: string;
+  connection_id: string | null;
+  employee_id: string | null;
+  agent_id: string | null;
+  execution_id: string | null;
+  workflow_execution_id: string | null;
+  orchestration_id: string | null;
+  capability: string;
+  action_type: string;
+  input: unknown;
+  risk_level: ExternalRiskLevel;
+  reversibility: string;
+  idempotency_key: string | null;
+  external_operation_id: string | null;
+  policy_result: unknown;
+  approval_status: Approvability | null;
+  approval_gate_id: string | null;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  result: unknown;
+  error: string | null;
+  verification: unknown;
+  recovery: unknown;
+  correlation_id: string | null;
+  created_at: string;
+  updated_at: string | null;
+  attempts: ExternalActionAttempt[];
+}
+
+export interface ExternalEvent {
+  id: string;
+  source: string;
+  integration_id: string | null;
+  company_id: string | null;
+  event_type: string;
+  payload: unknown;
+  payload_size: number;
+  timestamp: string | null;
+  verification_status: string;
+  correlation_id: string | null;
+  signature_status: string;
+  ingest_id: string | null;
+  received_at: string;
+}
+
+export interface BrowserSession {
+  id: string;
+  company_id: string;
+  employee_id: string | null;
+  agent_id: string | null;
+  workflow_execution_id: string | null;
+  orchestration_id: string | null;
+  status: string;
+  current_url: string | null;
+  domain: string | null;
+  allowed_domains: unknown;
+  policy: unknown;
+  metadata: unknown;
+  action_count: number;
+  navigation_count: number;
+  started_at: string | null;
+  last_activity_at: string | null;
+  terminated_at: string | null;
+  created_at: string;
+}
+
+export interface BrowserAction {
+  id: string;
+  session_id: string;
+  company_id: string;
+  action_type: string;
+  target: unknown;
+  input: unknown;
+  status: string;
+  risk_level: ExternalRiskLevel;
+  approval_status: string;
+  result: unknown;
+  error: string | null;
+  duration_ms: number | null;
+  verification: unknown;
+  created_at: string;
+}
+
+export interface BrowserObservation {
+  id: string;
+  session_id: string;
+  company_id: string;
+  observation_number: number;
+  url: string | null;
+  title: string | null;
+  snapshot: unknown;
+  screenshot_ref: string | null;
+  content_type: string;
+  page_state: unknown;
+  created_at: string;
+}
+
+export interface ComputerSession {
+  id: string;
+  company_id: string;
+  employee_id: string | null;
+  agent_id: string | null;
+  workflow_execution_id: string | null;
+  orchestration_id: string | null;
+  status: string;
+  screen: unknown;
+  cursor: unknown;
+  policy: unknown;
+  action_count: number;
+  started_at: string | null;
+  last_activity_at: string | null;
+  terminated_at: string | null;
+  created_at: string;
+}
+
+export interface ComputerAction {
+  id: string;
+  session_id: string;
+  company_id: string;
+  action_type: string;
+  input: unknown;
+  status: string;
+  risk_level: ExternalRiskLevel;
+  approval_status: string;
+  result: unknown;
+  error: string | null;
+  duration_ms: number | null;
+  verification: unknown;
+  created_at: string;
+}
+
+export interface ComputerObservation {
+  id: string;
+  session_id: string;
+  company_id: string;
+  observation_number: number;
+  snapshot: unknown;
+  screenshot_ref: string | null;
+  created_at: string;
+}
+
+export interface ExternalIntegrationPolicy {
+  id: string;
+  company_id: string;
+  integration_id: string | null;
+  scope_type: string;
+  scope_id: string | null;
+  capability_pattern: string | null;
+  risk_level_override: ExternalRiskLevel | null;
+  allowed: boolean;
+  require_approval: boolean;
+  rate_limit: unknown;
+  budget: unknown;
+  allowed_domains: unknown;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ExternalDomainRule {
+  id: string;
+  company_id: string;
+  integration_id: string | null;
+  scope_type: string;
+  scope_id: string | null;
+  domain: string;
+  decision: string;
+  http_methods: unknown;
+  allowed_paths: unknown;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ExternalDashboard {
+  company_id: string;
+  total_actions: number;
+  by_status: Record<string, number>;
+  success_rate: number;
+  failure_rate: number;
+  pending_approvals: {
+    id: string;
+    capability: string;
+    gate_id: string | null;
+    risk_level: string | null;
+    created_at: string | null;
+  }[];
+  pending_approval_count: number;
 }
