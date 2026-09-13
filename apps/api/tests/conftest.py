@@ -90,6 +90,25 @@ def db_engine(tmp_path):
         # of throwing "database is locked".
         connect_args={"check_same_thread": False, "timeout": 30},
     )
+
+    # WAL journaling — the practical fix for the pre-existing full-suite flake
+    # in test_orchestration_integration.py: orchestration workers run multiple
+    # concurrent *writer* connections against this same file DB, and under full
+    # suite load the rollback-journal ATOMIC-write lock window could exceed the
+    # busy timeout and fail a task ("database is locked"). WAL lets readers
+    # never block writers and shrinks writer-vs-writer contention, so the
+    # pipeline tolerates the suite's real-world load. Behavior-neutral: rows,
+    # fixtures, and assertions are unchanged.
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _set_wal(dbapi_conn, _record):  # pragma: no cover - exercised implicitly
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+        finally:
+            cur.close()
+
     Base.metadata.create_all(engine)
     return engine
 
