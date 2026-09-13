@@ -75,14 +75,14 @@ flowchart TD
     end
 
     subgraph Data["💾 Data Layer"]
-        PG["PostgreSQL 16 (90+ tables, company_id FK + index on every tenant table)"]
+        PG["PostgreSQL 16 (156 tables, company_id FK + index on every tenant table)"]
         Redis["Redis 7 (optional, future cache/queues)"]
         Alembic["Alembic (head: 0014_phase12_sim_opt_mkt)"]
     end
 
     subgraph AI["🤖 AI Providers"]
-        Mock["MockProvider (deterministic, CI/tests)"]
-        Real["OpenAI / Anthropic (optional, env keys)"]
+        Mock["MockProvider (deterministic — the ONE real provider, CI/tests, no keys)"]
+        Real["OpenAIProvider (stub, returns canned text — NO real LLM calls yet)"]
     end
 
     %% Client → Gateway

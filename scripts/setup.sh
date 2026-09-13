@@ -29,6 +29,19 @@ setup_backend() {
   cd "$API_DIR"
   check_cmd python3
 
+  # NEXUS requires Python ≥ 3.14 (using modern type syntax, 3.14-only features).
+  PY_VERSION="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  PY_MAJOR="$(echo "$PY_VERSION" | cut -d. -f1)"
+  PY_MINOR="$(echo "$PY_VERSION" | cut -d. -f2)"
+  if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 14 ]; }; then
+    printf "\033[1;31m[NEXUS ERROR]\033[0m Python %s detected; NEXUS requires Python >= 3.14.\n" "$PY_VERSION" >&2
+    printf "  • Install Python 3.14+: https://www.python.org/downloads/\n" >&2
+    printf "  • Or use the Docker path (no local Python needed):\n" >&2
+    printf "      docker compose up --build\n\n" >&2
+    exit 1
+  fi
+  log "Python $PY_VERSION ✓"
+
   if [ ! -d .venv ]; then
     log "Creating Python virtual environment"
     python3 -m venv .venv
@@ -53,6 +66,10 @@ setup_web() {
 }
 
 setup_shared() {
+  if [ ! -f "$ROOT_DIR/packages/shared/package.json" ]; then
+    log "Skipping packages/shared — not present (not required for core functionality)"
+    return
+  fi
   log "Setting up shared types package ($ROOT_DIR/packages/shared)"
   cd "$ROOT_DIR/packages/shared"
   check_cmd node

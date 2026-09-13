@@ -223,6 +223,14 @@ A **non-phase** end-to-end pass over the complete build (audit → integrate →
 - **Portfolio docs** — `security.md` (§39), `operations.md` (§40/41/42), `portfolio.md` (§46), `case-study.md` (§47), `demo.md` (§49/§50); `architecture.md` gained a master Mermaid flowchart (§37) + responsibility-boundary diagram (§4); [`README.md`](../README.md) restructured to portfolio format with the phase-by-phase walkthroughs retained as an appendix.
 - **Bounds preserved** — optimizations only propose (governance decides); simulation outputs stay SIMULATED/FORECAST; marketplace remains internal/metadata-only; **no self-modification/RL, no auto-production-replacement, no compliance certifications claimed**.
 
+### Follow-up: Portability & README pass (2026-09-14)
+
+A portfolio-facing pass answering "does this run on a stranger's machine, and is it honest about what's real vs demo?" — see [docs/final-readiness.md](final-readiness.md) and [docs/ui-tour.md](ui-tour.md).
+
+- **Hardened setup for new machines** — `scripts/setup.sh` now gates on Python ≥ 3.14 with an actionable error + Docker-fallback hint; the `packages/shared` step degrades gracefully when absent; `apps/api/requirements.txt` pins the top-level runtime deps to the exact CI-validated set; `.env.example` documents that Docker is canonical and **no API keys are required** (none are used).
+- **Default company ordering fix** — `CompanyManager.list_` now orders `created_at.asc()`, so the seeded flagship (NEXUS Labs, full demo data) is the UI's default company pick; per-user localStorage overrides still win.
+- **Professional README + real UI captures** — `README.md` rewritten with an inline renderable Mermaid architecture diagram, honest "real vs demo" section (MockProvider is the only real AI provider; the OpenAI adapter is a stub), a first-run "what to do next" guide, an API-keys section, and a troubleshooting table; 8 real UI screenshots in `docs/images/` plus the route-by-route [UI tour](ui-tour.md).
+
 ## Phase 13 — Preview (not started)
 
 Phase 13 is **planned (preview only — not started)**. Candidate scope:

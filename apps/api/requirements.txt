@@ -1,14 +1,16 @@
 # NEXUS Backend — runtime dependencies
-# NOTE: Using >= constraints because Python 3.14 is bleeding-edge and only
-# the newest package versions ship cp314 wheels. See docs/architecture.md
-# for the dependency-pinning discussion.
-fastapi>=0.115
-cryptography>=43
-uvicorn[standard]>=0.34
-pydantic>=2.13
-pydantic-settings>=2.7
-sqlalchemy>=2.0.42
-alembic>=1.14
-psycopg[binary]>=3.3.4
-redis>=5.2
-httpx>=0.28
+# Pinned to the exact versions validated in CI and the reference .venv
+# (Python 3.14). Install floors are exact pins so a stranger's environment
+# resolves the same tested set; bump deliberately and re-run the §6 battery
+# (docs/final-readiness.md) after any change.
+# Requires Python >= 3.14 (enforced by scripts/setup.sh).
+fastapi==0.141.1
+cryptography==50.0.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+pydantic-settings==2.15.0
+sqlalchemy==2.0.52
+alembic==1.19.2
+psycopg[binary]==3.3.5
+redis==8.1.0
+httpx==0.28.1

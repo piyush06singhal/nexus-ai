@@ -1,76 +1,308 @@
-# NEXUS
+# NEXUS — Autonomous AI Workforce & Company OS
 
-**An Autonomous AI Workforce & Company OS — not a chatbot.**
+**A production-framed, fully-tested, open-source platform where AI agents plan, coordinate, execute, verify, heal, simulate, and recommend — inside a governed company structure with approvals and full auditability. Not a chatbot.**
 
-Hand a high-level business objective to a system of AI agents that plans,
-coordinates, executes, verifies, heals, simulates, and recommends — inside a
-company structure with governance, approvals, and full auditability.
-
-> **Status:** Phases 0–12 complete + Final Engineering/Portfolio Pass. Phase 13
-> is planned (preview only — not started). No self-modification / RL; no
-> auto-production-replacement; simulation outputs are always SIMULATED/FORECAST,
-> never ACTUAL.
+> **Honest status:** development/demo platform, **not** a live production deployment. Everything runs end-to-end with real data flow, storage, and governance on your machine — but the intelligence layer uses a deterministic **MockProvider** (a real third-party LLM adapter is a planned next step, see [below](#is-this-real-or-a-demo)). No API keys required anywhere.
 
 ---
 
-## What NEXUS Does
+## Quick Start (5 minutes)
 
-Three converging ambitions, one platform:
+**Prerequisite: Docker** (Postgres, Redis, API, Web all run in containers). That's it — no Python or Node needed on the host.
 
-1. **AI Company in a Box** — a full company operating on AI (companies,
-   departments, org chart, KPIs, budgets, policies, decisions, risks, health).
-2. **AI Employee OS** — a runtime for individual AI workers with memory, tools,
-   skills, goals, and supervision.
-3. **Autonomous Startup / Business Engine** — continuously drives a business
-   mission end to end, governed by approval gates and bounded autonomy.
+```bash
+git clone <repo-url> nexus-ai
+cd nexus-ai
+cp .env.example .env          # defaults are fine for local use
+docker compose up --build -d
+```
 
-The engineering goal, in a few principles:
+On first boot the API container **auto-migrates the database** (empty → 156 tables at head `0014`), so your first `up` is also your first working system. Wait ~30–60s for all 4 containers to go healthy:
 
-- **Provider independence** — LLM access goes only through a `ModelProvider`
-  abstraction; the deterministic `MockProvider` runs the entire stack with no
-  API key (tests + CI).
-- **Security by default** — clean boundaries between reasoning, tool execution,
-  authorization, and external side effects.
-- **Reuse over duplicate** — every later phase composes earlier ones; there is
-  no second execution/memory/company/governance system.
-- **Honest labels** — SIMULATED / FORECAST outputs, RECOMMENDATION language,
-  no invented production claims.
+```bash
+docker compose ps              # everything should say "(healthy)"
+```
+
+Then open:
+
+| What | URL |
+|------|-----|
+| **Web UI** | <http://localhost:3000> |
+| API docs (Swagger) | <http://localhost:8000/docs> |
+| Health probes | <http://localhost:8000/api/v1/health/{live,ready,dependencies}> |
+
+### After setup — do these 5 things to see the system working live
+
+1. **Open the Dashboard** at <http://localhost:3000/> → you'll see a live status panel, KPI tiles, and activity from the seeded demo data (companies, agents, tasks, KPIs already populated).
+2. **Open Companies** at <http://localhost:3000/companies> → **NEXUS Labs** is the flagship seeded company (it's the first row and the default scope). Open its detail page for the org chart, health score, KPIs, budgets, decisions, risks, and alerts — all computed from real seeded execution data.
+3. **Run a task yourself** — Agents → create an agent (provider `mock`, status `active`) → Tasks → create a task → assign → execute → watch it land in **Activity**. Executes through the real pipeline (validate → context → tool loop → parse → persist) and stores an execution record.
+4. **Check Approvals** at <http://localhost:3000/approvals> → pending approval gates from the seeded governance/simulation demos. Approve one and watch its audit log update.
+5. **Open Marketplace** at <http://localhost:3000/marketplace> → the seeded published agent package, its benchmark scores, and evidence-based recommendations — the Phase 12 closed loop, tenant-scoped to your NEXUS Labs company.
+
+Want **real data in every page** instead of just the default seed? The deterministic demo seeds all 5 phases of demo data:
+
+```bash
+bash scripts/run_demos.sh      # migrate → 5 seeds (--reset) → Phase 11+12 smoke (0×5xx) → summary
+```
+
+A guided route-by-route tour with annotated screenshots lives in **[docs/ui-tour.md](docs/ui-tour.md)**.
+
+> **Prefer host-based dev over Docker?** Requires Python ≥ 3.14 + Node. See [Local development](#local-development).
 
 ---
 
 ## Architecture
 
-Master diagram (rendered): [docs/architecture.md](docs/architecture.md) — §§1–2
-contains the full Mermaid **master architecture flowchart** (§37) and the
-**responsibility-boundary diagram** (§4).
+One system, 14 layers, one database. The web UI talks to the API through a Next.js runtime proxy; the API composes 90+ model files (156 tables) across agent runtime, tools, workflows, memory, orchestration, reliability, employee OS, company layer, autonomous startup, external integrations, security/governance, and a simulation/optimization/marketplace intelligence layer. Every tenant-scoped table carries a `company_id` FK + index.
 
-Simplified view:
+```mermaid
+flowchart TD
+    subgraph Client["🖥️ Client"]
+        Web["NEXUS Web (Next.js 16, React 19, Tailwind v4)"]
+        CLI["CLI / Scripts"]
+    end
 
+    subgraph Gateway["🌐 Gateway & Proxy"]
+        WebProxy["Runtime Proxy /api/* → API"]
+    end
+
+    subgraph API["🔧 NEXUS API (FastAPI, Python 3.14)"]
+        Auth["Auth Middleware (HS256, RBAC/ABAC, PolicyEngine)"]
+        Health["Health Probes: /live /ready /dependencies"]
+        API_V1["/api/v1/* Routers"]
+    end
+
+    subgraph Core_Services["⚙️ Core Services"]
+        Runtime["Agent Runtime (validate→context→tool loop→parse→persist)"]
+        Tools["Tool Registry + ToolExecutor (perm-gated)"]
+        Workflow["Workflow Engine (topo-sort) + Worker + Scheduler"]
+        Memory["Memory Service (5 types, hybrid retrieval, namespace)"]
+        Orchestration["Orchestrator (Planner→Selector→Bus→Synthesizer)"]
+        Verification["Verification Service (6 strategies)"]
+        Recovery["Recovery Engine (10 strategies, budgets)"]
+        Evaluation["Evaluation (metrics, datasets, regression)"]
+    end
+
+    subgraph Employee_Company["👥 Employee OS + Company Layer (Ph 7–8)"]
+        EmployeeOS["EmployeeManager (lifecycle, skills, goals, workload, assignment, performance, templates, audit)"]
+        CompanyOS["CompanyManager (companies, depts, memberships, roles, goals, KPIs, budgets, policies, decisions, risks, alerts, health, reports, events)"]
+    end
+
+    subgraph Startup["🚀 Autonomous Startup Engine (Ph 9)"]
+        Mission["MissionService (analyze, validate, plan)"]
+        Bootstrap["StartupPlanner + Bootstrap (Company + Workforce)"]
+        Cycles["OperatingEngine (observe→assess→plan→prioritize→allocate→execute→verify→measure→learn→replan)"]
+        Autonomy["AutonomyService (allow/require_approval/block) + ApprovalGateManager"]
+    end
+
+    subgraph External["🔌 External Integrations (Ph 10)"]
+        ExtMgr["ExternalActionManager (risk→policy→approval→exec→verify→recover→audit)"]
+        Integrations["IntegrationProvider Registry (Email, Calendar, Dev, WebResearch, GenericHTTP OFF)"]
+        Browser["Browser Sessions (simulated, bounded, UNTRUSTED)"]
+        Computer["Computer Sessions (simulated, bounded, UNTRUSTED)"]
+        Credentials["Reference-only Credentials (env-sourced, never in DB)"]
+        SSRF["SecureHTTPClient (SSRF, redirect revalidation, caps)"]
+    end
+
+    subgraph Security["🛡️ Security, Governance & Observability (Ph 11)"]
+        Identity["Identity (unified principal table)"]
+        AuthZ["AuthorizationService (IDENTITY→AUTHZ→POLICY→LIMIT→APPROVAL→ACTION→VERIFY→AUDIT→OBS→RECOVER)"]
+        Secrets["SecretManager (Fernet AES-256-GCM, key rotation, mask hints)"]
+        Audit["AuditService (append-only hash-chain + /verify)"]
+        Detection["13-category Detection → Alert → Incident → Containment"]
+        Governance["GovernanceGuard (kill switch, resource limits, break-glass, feature flags)"]
+        Telemetry["Telemetry (request/trace IDs) + Metrics + Redaction"]
+    end
+
+    subgraph Sim_Opt["🧠 Simulation, Optimization & Marketplace (Ph 12)"]
+        Sim["SimulationEngine (Sandbox, Monte-Carlo, DigitalTwin, checkpoints) — SIMULATED/FORECAST only"]
+        Opt["OptimizationEngine (greedy/exhaustive/ranking, policy/budget filter, 10-part explainability, ApprovalGate)"]
+        Exp["ExperimentEngine (approval-gated, WINNER/LOSER/INCONCLUSIVE)"]
+        Bench["BenchmarkEngine (8 dimensions, reuses Ph6 metrics)"]
+        Market["Marketplace (metadata-only, PackageScanner, evidence recs, approval-gated install)"]
+        Loop["NEXUSOptimizationLoop (OBSERVE→SIMULATE→OPTIMIZE→PROPOSE→APPROVE→EXECUTE→MEASURE→LEARN)"]
+    end
+
+    subgraph Data["💾 Data Layer"]
+        PG["PostgreSQL 16 (156 tables, company_id FK + index on every tenant table)"]
+        Redis["Redis 7 (optional, future cache/queues)"]
+        Alembic["Alembic (head: 0014_phase12_sim_opt_mkt)"]
+    end
+
+    subgraph AI["🤖 AI Providers"]
+        Mock["MockProvider (deterministic — the ONE real provider, CI/tests, no keys)"]
+        Real["OpenAIProvider (stub, returns canned text — NO real LLM calls yet)"]
+    end
+
+    %% Client → Gateway
+    Web --> WebProxy
+    CLI --> WebProxy
+
+    %% Gateway → API
+    WebProxy --> Auth
+    Auth --> Health
+    Auth --> API_V1
+
+    %% API → Core
+    API_V1 --> Runtime
+    API_V1 --> Tools
+    API_V1 --> Workflow
+    API_V1 --> Memory
+    API_V1 --> Orchestration
+    API_V1 --> Verification
+    API_V1 --> Recovery
+    API_V1 --> Evaluation
+
+    %% Core → Employee/Company
+    Runtime --> EmployeeOS
+    Workflow --> EmployeeOS
+    Orchestration --> EmployeeOS
+    EmployeeOS --> CompanyOS
+    CompanyOS --> EmployeeOS
+
+    %% Company → Startup
+    CompanyOS --> Mission
+    Mission --> Bootstrap
+    Bootstrap --> Cycles
+    Cycles --> Autonomy
+    Autonomy --> EmployeeOS
+    Autonomy --> CompanyOS
+
+    %% Core + Company → External
+    Tools --> ExtMgr
+    Workflow --> ExtMgr
+    Orchestration --> ExtMgr
+    ExtMgr --> Integrations
+    ExtMgr --> Browser
+    ExtMgr --> Computer
+    ExtMgr --> Credentials
+    Integrations --> SSRF
+    Browser --> SSRF
+    Computer --> SSRF
+
+    %% Security wraps everything
+    Auth --> Identity
+    AuthZ --> Identity
+    AuthZ --> Secrets
+    AuthZ --> Audit
+    AuthZ --> Detection
+    AuthZ --> Governance
+    AuthZ --> Telemetry
+
+    %% Phase 12 composes Ph 11 + 9 + 8 + 6 + 7
+    Sim --> Governance
+    Opt --> Autonomy
+    Opt --> Governance
+    Exp --> Governance
+    Bench --> Evaluation
+    Market --> EmployeeOS
+    Loop --> Sim
+    Loop --> Opt
+    Loop --> Exp
+    Loop --> Bench
+    Loop --> Market
+
+    %% Data
+    Runtime --> PG
+    Tools --> PG
+    Workflow --> PG
+    Memory --> PG
+    Orchestration --> PG
+    Verification --> PG
+    Recovery --> PG
+    Evaluation --> PG
+    EmployeeOS --> PG
+    CompanyOS --> PG
+    Mission --> PG
+    Bootstrap --> PG
+    Cycles --> PG
+    Autonomy --> PG
+    ExtMgr --> PG
+    Integrations --> PG
+    Browser --> PG
+    Computer --> PG
+    Credentials --> PG
+    Identity --> PG
+    AuthZ --> PG
+    Secrets --> PG
+    Audit --> PG
+    Detection --> PG
+    Governance --> PG
+    Telemetry --> PG
+    Sim --> PG
+    Opt --> PG
+    Exp --> PG
+    Bench --> PG
+    Market --> PG
+    Loop --> PG
+
+    %% AI Providers
+    Runtime --> Mock
+    Runtime --> Real
+
+    %% Redis
+    Workflow -.-> Redis
+    Memory -.-> Redis
+    Telemetry -.-> Redis
+
+    classDef client fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef gateway fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef api fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef emp fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+    classDef startup fill:#fff8e1,stroke:#f57f17,stroke-width:2px;
+    classDef ext fill:#f1f8e9,stroke:#558b2f,stroke-width:2px;
+    classDef sec fill:#fafafa,stroke:#424242,stroke-width:2px;
+    classDef sim fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
+    classDef data fill:#eceff1,stroke:#37474f,stroke-width:2px;
+    classDef ai fill:#fbe9e7,stroke:#bf360c,stroke-width:2px;
+
+    class Web,CLI client;
+    class WebProxy gateway;
+    class Auth,Health,API_V1 api;
+    class Runtime,Tools,Workflow,Memory,Orchestration,Verification,Recovery,Evaluation core;
+    class EmployeeOS,CompanyOS emp;
+    class Mission,Bootstrap,Cycles,Autonomy startup;
+    class ExtMgr,Integrations,Browser,Computer,Credentials,SSRF ext;
+    class Identity,AuthZ,Secrets,Audit,Detection,Governance,Telemetry sec;
+    class Sim,Opt,Exp,Bench,Market,Loop sim;
+    class PG,Redis,Alembic data;
+    class Mock,Real ai;
 ```
-Browser/web ──▶ NEXUS Web (Next.js) ──proxy──▶ NEXUS API (FastAPI)
-                            │                        │
-                       /api/v1 routers         /health/live|ready|dependencies
-                            │                        │
-            ┌───────────────┴───────────────────────┐
-   Core     │ Agent Runtime · Tools · Workflows ·   │
-            │ Memory · Orchestration · Verify ·     │
-            │ Recovery · Evaluation                 │
-   Org      │ Employee OS ─▶ Company Layer          │
-   Mission  │ Autonomous Startup Engine (gates)     │
-   External │ Govt funnel: risk→policy→approval→exec│
-   Security │ Identity · RBAC/ABAC · Fernet secrets │
-            │ Hash-chained audit · Kill switch      │
-   Phase 12 │ Simulation → Optimization → Benchmarks│
-            │ → Marketplace → Closed Loop           │
-            └──────────────┬───────────────────────┘
-                     PostgreSQL 16 (+ Redis option)
-```
 
-12 layers, bottom → top: Foundation → Agent Runtime → Tools → Workflows →
-Memory → Multi-Agent Orchestration → Verification/Recovery/Evaluation →
-Employee OS → Company Layer → Autonomous Startup Engine → External Integrations
-→ Security/Governance → Simulation/Optimization/Marketplace. Every tenant-scoped
-table carries a `company_id` FK + index.
+The layer-by-layer engineering reference and the responsibility-boundary diagram are in **[docs/architecture.md](docs/architecture.md)**.
+
+---
+
+## Is This Real or a Demo?
+
+Straight answer, no spin:
+
+- ✅ **The pipeline is real and fully wired.** Data flows end-to-end: Web UI → Next.js proxy → FastAPI → PostgreSQL. Storage, retrieval, execution records, approvals, audit chains, KPIs, benchmarks — all real database-backed operations, all verified by 1093 backend tests + 141 frontend tests.
+- ✅ **It runs on a stranger's machine.** Verified by cold-starting from empty volumes: `docker compose up` on a clean checkout auto-migrates 156 tables and seeds live demo data, with every UI page responding HTTP 200.
+- ⚠️ **The intelligence is deterministic, not a real LLM.** All agent/tool/workflow "thinking" is produced by a `MockProvider` (a real, deterministic provider that needs no API key). An **`OpenAIProvider` stub ships** — it accepts the config but returns canned text; it does **not** call OpenAI. The provider **seam** is real and pluggable ([`app/ai/providers/`](apps/api/app/ai/providers/)) — building a real LLM adapter is the highest-value next step.
+- ⚠️ **It is a development/demo platform, not a live production deployment.** Auth is off by default (`AUTH_ENABLED=false`), there's no TLS, single host, and no compliance certifications or SLAs are claimed. The `production_readiness` check intentionally FAILs until those are configured.
+
+**API keys?** None required — and none are used. Every demo, test, and page runs on the MockProvider. `provider="openai"` will not make real calls until a real adapter is implemented.
+
+**What happens on real data?** The same paths handle real users/companies/agents/tasks — the seed data and live CRUD go through identical APIs and tables. The only simulation-specific behavior is deliberately labeled SIMULATED / FORECAST / RECOMMENDATION and never mutates production rows.
+
+---
+
+## User Interface
+
+A full web console covering every phase — Dashboard, Companies (executive view), Agents, Tasks, Activity, Workflows, Memories, Employees (directory/workbench/goals/performance), Startup Engine, External integrations (browser/computer), Approvals, plus Phase 12 Simulation/Optimization/Experiments/Benchmarks/Marketplace and Phase 11 Control Center (security, audit, incidents, governance, health, access).
+
+| | |
+|---|---|
+| **Dashboard** — live agent/task/approval counts, KPIs, activity feed | **Companies** — org chart, health score, KPIs, budgets, decisions, risks |
+| ![Dashboard](docs/images/01-dashboard.png) | ![Companies](docs/images/02-companies.png) |
+| **Approvals** — pending gates one screen away | **Marketplace** — package catalog, benchmark scores, recommendations |
+| ![Approvals](docs/images/04-approvals.png) | ![Marketplace](docs/images/07-marketplace.png) |
+| **Startup Engine** — mission graph, cycles, products, gates | **Control Center** — security, audit, incidents, health |
+| ![Startup](docs/images/06-startup.png) | ![Control](docs/images/08-control.png) |
+
+Screen size matters here — **[docs/ui-tour.md](docs/ui-tour.md)** walks every region of the app with annotated screenshots and the exact seed data you should see in each view.
 
 ---
 
@@ -89,52 +321,38 @@ table carries a `company_id` FK + index.
 | Autonomous Startup Engine | Mission → plan → bootstrap → operating cycles → feedback → replan; approval gates; bounded autonomy | 9 |
 | External Integrations & Computer Use | Gov't funnel, reference-only credentials, simulated browser/computer, SSRF/prompt-injection | 10 |
 | Security, Governance & Production Hardening | HS256 auth, RBAC/ABAC, Fernet secrets, hash-chained audit, kill switch, resource limits, telemetry | 11 |
-| Simulation, Optimization & MarketPlace | Closed-sandbox simulation, multi-objective optimization (proposes → gate decides), experiments, benchmarks, internal marketplace, closed loop | 12 |
+| Simulation, Optimization & Marketplace | Closed-sandbox simulation, multi-objective optimization (proposes → gate decides), experiments, benchmarks, internal marketplace, closed loop | 12 |
 
 ---
 
 ## Technology Stack *(implemented only)*
 
-- **Backend**: FastAPI + SQLAlchemy + Alembic (head `0014_phase12_sim_opt_mkt`), Python 3.14, psycopg (PostgreSQL 16), pydantic-settings.
+- **Backend**: FastAPI + SQLAlchemy + Alembic (head `0014_phase12_sim_opt_mkt`), Python 3.14, psycopg (PostgreSQL 16), pydantic-settings. Runtime deps pinned to the CI-validated set.
 - **Frontend**: Next.js 16 (App Router), React 19, Tailwind v4, TypeScript (strict), vitest.
 - **Infrastructure**: Docker Compose (postgres/redis/api/web, healthchecks), auto-migration entrypoint (`AUTO_MIGRATE`), CI with migration round-trip + readiness gate.
-- **AI**: provider-agnostic `ModelProvider` (mock deterministic; OpenAI/Anthropic adapters behind the same seam, env-keyed, optional).
+- **AI**: provider-agnostic `ModelProvider` seam ([`app/ai/providers/`](apps/api/app/ai/providers/)) — **one** shipped provider, `MockProvider`, deterministic and API-key-free. An `OpenAIProvider` **stub** exists for extension; **no real third-party LLM adapter is implemented yet** (see [Is This Real or a Demo?](#is-this-real-or-a-demo)).
 
 ---
 
-## Quick Start
+## API Keys
 
-### One-command stack (Docker)
+**No API keys are required, and none are exercised.** The whole platform runs on `MockProvider`, which is deterministic, offline, and free. If you later implement a real adapter (`app/ai/providers/`), keys would be supplied as environment variables and routed via the provider registry — nothing else in the platform changes.
 
-```bash
-cp .env.example .env          # edit if needed
-docker compose up --build -d
-```
+---
 
-The API container auto-runs `alembic upgrade head` on boot
-(`docker-entrypoint.sh`; opt out with `AUTO_MIGRATE=false`). Then:
+## Troubleshooting
 
-- Web: <http://localhost:3000>
-- API docs: <http://localhost:8000/docs>
-- Health: <http://localhost:8000/api/v1/health/live> · `/ready` · `/dependencies`
-
-### Full seeded demo
-
-```bash
-bash scripts/run_demos.sh     # docker PG/Redis → migrate → 5 seeds (--reset) → Phase 11+12 smoke (0×5xx)
-```
-
-Open **`docs/demo.md`** for the 14-item reviewer's checklist (§49) mapped to
-exact commands, UI pages, and ACTUAL/SIMULATED/FORECAST/RECOMMENDATION labels.
-
-### Local dev (host servers)
-
-```bash
-./scripts/setup.sh            # one-shot bootstrap (venv, deps, infra)
-docker compose up -d postgres redis
-cd apps/api && source .venv/bin/activate && alembic upgrade head && uvicorn app.main:app --reload
-cd apps/web && npm install && npm run dev
-```
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `docker compose up --build` fails on `Address already in use` | Host port 3000/8000/5433 already taken | `POSTGRES_PORT=<other>` in `.env`, or stop the other service; the 📖 [operations.md](docs/operations.md) shows the full port map |
+| Containers not healthy / Web shows API errors | First boot migration still running, or API not ready yet | `docker compose ps` and wait for all `(healthy)`; `docker compose logs api` to see the `alembic upgrade head` run |
+| Database not migrated | `AUTO_MIGRATE=false` set, or used host dev without running migrations | Unset `AUTO_MIGRATE` (or run `.venv/bin/alembic upgrade head` from `apps/api`) |
+| Seeded demo missing pages/data | Seeds not run (Docker path runs them automatically) | `bash scripts/run_demos.sh` from the repo root |
+| Local dev: `pip install` resolves different versions than CI | Host Python < 3.14, or pip skipped pins | Use Docker, or install Python ≥ 3.14 (enforced by `scripts/setup.sh`) |
+| `scripts/setup.sh` refuses to run | Python 3.12/3.13 on host | Install Python 3.14+ or use the Docker path |
+| Seed crash `top.rank == 1` | Stale orphaned marketplace rows in an old DB | `bash scripts/run_demos.sh` (it resets + prunes orphans) |
+| Web reachable but API calls 500 | API container not healthy / DB down | `curl -sf localhost:8000/api/v1/health/ready`; check `docker compose ps` |
+| Want auth enforced on this stack | Production-only by design | Set `AUTH_ENABLED=true` + keys (see [docs/security.md](docs/security.md)) |
 
 ---
 
@@ -162,7 +380,7 @@ real-LLM production deployment. Optimizations **propose** — governance
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                                # 1085+ tests across 94 files
+.venv/bin/pytest -q                                # 1093 tests across 100 files
 .venv/bin/ruff check app tests scripts
 .venv/bin/ruff format --check app tests scripts
 
@@ -189,8 +407,8 @@ nexus-ai/
 │   │   ├── app/
 │   │   │   ├── core/        # config, logging, errors, telemetry, metrics, redaction
 │   │   │   ├── api/v1/      # versioned HTTP endpoints + health probes
-│   │   │   ├── ai/          # ModelProvider abstraction + (mock/anthropic/openai)
-│   │   │   ├── db/models/   # SQLAlchemy models (90+ tables, phases 0–12)
+│   │   │   ├── ai/          # ModelProvider seam (mock = real; openai = stub)
+│   │   │   ├── db/models/   # SQLAlchemy models (156 tables, phases 0–12)
 │   │   │   ├── schemas/     # Pydantic contracts
 │   │   │   ├── services/    # persistence + runtime assembly
 │   │   │   ├── runtime/  tools/  workflow/  memory/
@@ -200,13 +418,14 @@ nexus-ai/
 │   │   │   └── checks/     # production_readiness
 │   │   ├── alembic/        # migrations (0014 = Phase 12 head)
 │   │   ├── scripts/        # 5 seeds, smoke_api, perf_baseline
-│   │   └── tests/          # 1085+ tests (SQLite, MockProvider)
+│   │   └── tests/          # 1093 tests (SQLite, MockProvider)
 │   └── web/        # Next.js frontend (approvals, settings, phase-12 centers, shells)
 │       ├── src/app/
 │       ├── src/components/
 │       └── src/lib/        # API client, types, navigation
 ├── docs/           # portfolio set: architecture, security, operations, portfolio,
-│                   # case-study, demo, final-readiness, roadmap + phase references
+│   │               # case-study, demo, final-readiness, roadmap, ui-tour + images
+│   └── images/     # real UI screenshots
 ├── infrastructure/docker/  # Dockerfiles + docker-entrypoint.sh
 ├── scripts/        # run_demos.sh, setup.sh
 ├── docker-compose.yml
@@ -215,10 +434,23 @@ nexus-ai/
 
 ---
 
+### Local development
+
+Backend/frontend on the host (Docker only for Postgres/Redis):
+
+```bash
+./scripts/setup.sh            # one-shot bootstrap (venv, deps, infra) — enforces Python >= 3.14
+docker compose up -d postgres redis
+cd apps/api && source .venv/bin/activate && alembic upgrade head && uvicorn app.main:app --reload
+cd apps/web && npm install && npm run dev
+```
+
+---
+
 ## Documentation
 
+- **Run & demo**: [UI tour (screenshots)](docs/ui-tour.md) · [demo guide (14-item checklist)](docs/demo.md) · [operations](docs/operations.md)
 - **Portfolio**: [portfolio](docs/portfolio.md) · [case-study](docs/case-study.md) · [final-readiness](docs/final-readiness.md)
-- **Run & demo**: [demo guide (14-item checklist)](docs/demo.md) · [operations](docs/operations.md)
 - **Design**: [architecture (master diagram)](docs/architecture.md) · [roadmap](docs/roadmap.md)
 - **Phase references**: [workflows](docs/workflows.md) · [memory](docs/memory.md) · [orchestration](docs/orchestration.md) · [reliability](docs/reliability.md) · [employee-os](docs/employee-os.md) · [company-os](docs/company-os.md) · [phase-9-autonomous-startup](docs/phase-9-autonomous-startup.md) · [phase-10-external-integrations](docs/phase-10-external-integrations.md) · [security-architecture](docs/security-architecture.md) · [phase-11-production-hardening](docs/phase-11-production-hardening.md) · [phase-12](docs/phase-12.md) + topic docs ([simulation](docs/simulation.md) · [optimization](docs/optimization.md) · [experimentation](docs/experimentation.md) · [benchmarking](docs/benchmarking.md) · [agent-marketplace](docs/agent-marketplace.md) · [closed-loop-optimization](docs/closed-loop-optimization.md))
 

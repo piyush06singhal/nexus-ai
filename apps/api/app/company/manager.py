@@ -105,7 +105,10 @@ class CompanyManager:
         return self._db.get(Company, company_id)
 
     def list_(self) -> list[Company]:
-        stmt = select(Company).order_by(Company.created_at.desc())
+        # Ascending: the earliest-seeded (flagship) company appears first in the
+        # UI's default company pick; users who override via localStorage keep
+        # their saved selection (see useCompanyScope.ts).
+        stmt = select(Company).order_by(Company.created_at.asc())
         return list(self._db.execute(stmt).scalars().all())
 
     def update(self, company_id: UUID, **fields: Any) -> Company:
