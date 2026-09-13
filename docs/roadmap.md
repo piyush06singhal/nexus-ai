@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–12 are complete. Phase 13 is planned (preview only — not started).**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phases 0–12 are complete, plus a final engineering/portfolio pass. Phase 13 is planned (preview only — not started).**
 
 ---
 
@@ -213,6 +213,15 @@ Phase 12 lets NEXUS **reason forward before deciding**: model an organization in
 - **Configuration** — Phase 12 adds **no new env vars**; it composes Phase 11 governance limits (per-day budgets for `sim_runs`, `sim_iterations`, `sim_events`, `optimization_candidates`, `benchmark_runs`, `benchmark_cases`, `experiment_runs`, `marketplace_ops`) and engine hard ceilings (`max_ticks=500`, `max_events=5000`, `max_iterations=50`, `run_timeout_seconds=60`, `MAX_CONCURRENT_PHASE12_RUNS=8`).
 
 **Exit criteria (met):** a what-if can be modeled and compared in a closed sandbox; weighted multi-objective optimization proposes §46-explainable, approval-gated recommendations never applied automatically; experiments conclude honestly; agents are benchmarked on versioned deterministic suites; packages are published, recommended from measured signals, and installed only through safe approval-gated install; and the closed loop drives a full observe→…→learn cycle end to end — all deterministic, provider-neutral, tenant-isolated, and assertable via the seed demo + 112 tests.
+
+## ✅ Final Engineering Pass (portfolio, integration & readiness)
+
+A **non-phase** end-to-end pass over the complete build (audit → integrate → harden → test → document → demonstrate → finalize), **not a Phase 13 subsystem**. See [docs/final-readiness.md](final-readiness.md) for the full report and [docs/portfolio.md](portfolio.md) for the portfolio narrative.
+
+- **Integration & hardening** — canonical unauthenticated health probes `/api/v1/health/{live,ready,dependencies}` (§14) wired into Docker Compose healthchecks; one-command stack (`docker compose up --build` auto-runs `alembic upgrade head` via `docker-entrypoint.sh`, opt-out `AUTO_MIGRATE=false`); real `/approvals` and `/settings` pages replacing the removed `PlaceholderPage`; CI gained a Postgres-backed migration **round-trip** (`upgrade head` → `downgrade base` → `upgrade head`) and a non-blocking `production_readiness` gate.
+- **Demo automation** — `scripts/run_demos.sh` brings up Postgres/Redis, migrates, runs all 5 seeds in dependency order with `--reset`, and sweeps the Phase 11 + Phase 12 smoke suites (0×5xx). `apps/api/scripts/perf_baseline.py` records dev-environment measurements (not SLAs).
+- **Portfolio docs** — `security.md` (§39), `operations.md` (§40/41/42), `portfolio.md` (§46), `case-study.md` (§47), `demo.md` (§49/§50); `architecture.md` gained a master Mermaid flowchart (§37) + responsibility-boundary diagram (§4); [`README.md`](../README.md) restructured to portfolio format with the phase-by-phase walkthroughs retained as an appendix.
+- **Bounds preserved** — optimizations only propose (governance decides); simulation outputs stay SIMULATED/FORECAST; marketplace remains internal/metadata-only; **no self-modification/RL, no auto-production-replacement, no compliance certifications claimed**.
 
 ## Phase 13 — Preview (not started)
 

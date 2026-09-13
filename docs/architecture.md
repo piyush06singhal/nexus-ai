@@ -4,7 +4,358 @@
 
 ---
 
-## 1. Overview
+## 1. Master Architecture Diagram (§37/§38)
+
+```mermaid
+flowchart TD
+    subgraph Client["🖥️ Client"]
+        Web["NEXUS Web (Next.js 16, React 19, Tailwind v4)"]
+        CLI["CLI / Scripts"]
+    end
+
+    subgraph Gateway["🌐 Gateway & Proxy"]
+        WebProxy["Runtime Proxy /api/* → API"]
+    end
+
+    subgraph API["🔧 NEXUS API (FastAPI, Python 3.14)"]
+        Auth["Auth Middleware (HS256, RBAC/ABAC, PolicyEngine)"]
+        Health["Health Probes: /live /ready /dependencies"]
+        API_V1["/api/v1/* Routers"]
+    end
+
+    subgraph Core_Services["⚙️ Core Services"]
+        Runtime["Agent Runtime (validate→context→tool loop→parse→persist)"]
+        Tools["Tool Registry + ToolExecutor (perm-gated)"]
+        Workflow["Workflow Engine (topo-sort) + Worker + Scheduler"]
+        Memory["Memory Service (5 types, hybrid retrieval, namespace)"]
+        Orchestration["Orchestrator (Planner→Selector→Bus→Synthesizer)"]
+        Verification["Verification Service (6 strategies)"]
+        Recovery["Recovery Engine (10 strategies, budgets)"]
+        Evaluation["Evaluation (metrics, datasets, regression)"]
+    end
+
+    subgraph Employee_Company["👥 Employee OS + Company Layer (Ph 7–8)"]
+        EmployeeOS["EmployeeManager (lifecycle, skills, goals, workload, assignment, performance, templates, audit)"]
+        CompanyOS["CompanyManager (companies, depts, memberships, roles, goals, KPIs, budgets, policies, decisions, risks, alerts, health, reports, events)"]
+    end
+
+    subgraph Startup["🚀 Autonomous Startup Engine (Ph 9)"]
+        Mission["MissionService (analyze, validate, plan)"]
+        Bootstrap["StartupPlanner + Bootstrap (Company + Workforce)"]
+        Cycles["OperatingEngine (observe→assess→plan→prioritize→allocate→execute→verify→measure→learn→replan)"]
+        Autonomy["AutonomyService (allow/require_approval/block) + ApprovalGateManager"]
+    end
+
+    subgraph External["🔌 External Integrations (Ph 10)"]
+        ExtMgr["ExternalActionManager (risk→policy→approval→exec→verify→recover→audit)"]
+        Integrations["IntegrationProvider Registry (Email, Calendar, Dev, WebResearch, GenericHTTP OFF)"]
+        Browser["Browser Sessions (simulated, bounded, UNTRUSTED)"]
+        Computer["Computer Sessions (simulated, bounded, UNTRUSTED)"]
+        Credentials["Reference-only Credentials (env-sourced, never in DB)"]
+        SSRF["SecureHTTPClient (SSRF, redirect revalidation, caps)"]
+    end
+
+    subgraph Security["🛡️ Security, Governance & Observability (Ph 11)"]
+        Identity["Identity (unified principal table)"]
+        AuthZ["AuthorizationService (IDENTITY→AUTHZ→POLICY→LIMIT→APPROVAL→ACTION→VERIFY→AUDIT→OBS→RECOVER)"]
+        Secrets["SecretManager (Fernet AES-256-GCM, key rotation, mask hints)"]
+        Audit["AuditService (append-only hash-chain + /verify)"]
+        Detection["13-category Detection → Alert → Incident → Containment"]
+        Governance["GovernanceGuard (kill switch, resource limits, break-glass, feature flags)"]
+        Telemetry["Telemetry (request/trace IDs) + Metrics + Redaction"]
+    end
+
+    subgraph Sim_Opt["🧠 Simulation, Optimization & Marketplace (Ph 12)"]
+        Sim["SimulationEngine (Sandbox, Monte-Carlo, DigitalTwin, checkpoints) — SIMULATED/FORECAST only"]
+        Opt["OptimizationEngine (greedy/exhaustive/ranking, policy/budget filter, 10-part explainability, ApprovalGate)"]
+        Exp["ExperimentEngine (approval-gated, WINNER/LOSER/INCONCLUSIVE)"]
+        Bench["BenchmarkEngine (8 dimensions, reuses Ph6 metrics)"]
+        Market["Marketplace (metadata-only, PackageScanner, evidence recs, approval-gated install)"]
+        Loop["NEXUSOptimizationLoop (OBSERVE→SIMULATE→OPTIMIZE→PROPOSE→APPROVE→EXECUTE→MEASURE→LEARN)"]
+    end
+
+    subgraph Data["💾 Data Layer"]
+        PG["PostgreSQL 16 (90+ tables, company_id FK + index on every tenant table)"]
+        Redis["Redis 7 (optional, future cache/queues)"]
+        Alembic["Alembic (head: 0014_phase12_sim_opt_mkt)"]
+    end
+
+    subgraph AI["🤖 AI Providers"]
+        Mock["MockProvider (deterministic, CI/tests)"]
+        Real["OpenAI / Anthropic (optional, env keys)"]
+    end
+
+    %% Client → Gateway
+    Web --> WebProxy
+    CLI --> WebProxy
+
+    %% Gateway → API
+    WebProxy --> Auth
+    Auth --> Health
+    Auth --> API_V1
+
+    %% API → Core
+    API_V1 --> Runtime
+    API_V1 --> Tools
+    API_V1 --> Workflow
+    API_V1 --> Memory
+    API_V1 --> Orchestration
+    API_V1 --> Verification
+    API_V1 --> Recovery
+    API_V1 --> Evaluation
+
+    %% Core → Employee/Company
+    Runtime --> EmployeeOS
+    Workflow --> EmployeeOS
+    Orchestration --> EmployeeOS
+    EmployeeOS --> CompanyOS
+    CompanyOS --> EmployeeOS
+
+    %% Company → Startup
+    CompanyOS --> Mission
+    Mission --> Bootstrap
+    Bootstrap --> Cycles
+    Cycles --> Autonomy
+    Autonomy --> EmployeeOS
+    Autonomy --> CompanyOS
+
+    %% Core + Company → External
+    Tools --> ExtMgr
+    Workflow --> ExtMgr
+    Orchestration --> ExtMgr
+    ExtMgr --> Integrations
+    ExtMgr --> Browser
+    ExtMgr --> Computer
+    ExtMgr --> Credentials
+    Integrations --> SSRF
+    Browser --> SSRF
+    Computer --> SSRF
+
+    %% Security wraps everything
+    Auth --> Identity
+    AuthZ --> Identity
+    AuthZ --> Secrets
+    AuthZ --> Audit
+    AuthZ --> Detection
+    AuthZ --> Governance
+    AuthZ --> Telemetry
+
+    %% Phase 12 composes Ph 11 + 9 + 8 + 6 + 7
+    Sim --> Governance
+    Opt --> Autonomy
+    Opt --> Governance
+    Exp --> Governance
+    Bench --> Evaluation
+    Market --> EmployeeOS
+    Loop --> Sim
+    Loop --> Opt
+    Loop --> Exp
+    Loop --> Bench
+    Loop --> Market
+
+    %% Data
+    Runtime --> PG
+    Tools --> PG
+    Workflow --> PG
+    Memory --> PG
+    Orchestration --> PG
+    Verification --> PG
+    Recovery --> PG
+    Evaluation --> PG
+    EmployeeOS --> PG
+    CompanyOS --> PG
+    Mission --> PG
+    Bootstrap --> PG
+    Cycles --> PG
+    Autonomy --> PG
+    ExtMgr --> PG
+    Integrations --> PG
+    Browser --> PG
+    Computer --> PG
+    Credentials --> PG
+    Identity --> PG
+    AuthZ --> PG
+    Secrets --> PG
+    Audit --> PG
+    Detection --> PG
+    Governance --> PG
+    Telemetry --> PG
+    Sim --> PG
+    Opt --> PG
+    Exp --> PG
+    Bench --> PG
+    Market --> PG
+    Loop --> PG
+
+    %% AI Providers
+    Runtime --> Mock
+    Runtime --> Real
+
+    %% Redis
+    Workflow -.-> Redis
+    Memory -.-> Redis
+    Telemetry -.-> Redis
+
+    %% Styles
+    classDef client fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef gateway fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef api fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef emp fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+    classDef startup fill:#fff8e1,stroke:#f57f17,stroke-width:2px;
+    classDef ext fill:#f1f8e9,stroke:#558b2f,stroke-width:2px;
+    classDef sec fill:#fafafa,stroke:#424242,stroke-width:2px;
+    classDef sim fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
+    classDef data fill:#eceff1,stroke:#37474f,stroke-width:2px;
+    classDef ai fill:#fbe9e7,stroke:#bf360c,stroke-width:2px;
+
+    class Web,CLI client;
+    class WebProxy gateway;
+    class Auth,Health,API_V1 api;
+    class Runtime,Tools,Workflow,Memory,Orchestration,Verification,Recovery,Evaluation core;
+    class EmployeeOS,CompanyOS emp;
+    class Mission,Bootstrap,Cycles,Autonomy startup;
+    class ExtMgr,Integrations,Browser,Computer,Credentials,SSRF ext;
+    class Identity,AuthZ,Secrets,Audit,Detection,Governance,Telemetry sec;
+    class Sim,Opt,Exp,Bench,Market,Loop sim;
+    class PG,Redis,Alembic data;
+    class Mock,Real ai;
+```
+
+---
+
+## 2. Responsibility-Boundary Diagram (§4)
+
+```mermaid
+flowchart LR
+    subgraph Reasoning["Agent Reasoning"]
+        Runtime["Runtime: prompt building, tool loop, parsing"]
+    end
+
+    subgraph Tool_Layer["Tool Layer (Capability Boundary)"]
+        Perm["PermissionService: admin→deny→allow→dangerous-guard→allow"]
+        Exec["ToolExecutor: resolve→validate→authorize→timeout→persist"]
+        Builtin["Built-in: calculator, datetime, text_utils, json_utils"]
+        ExtTools["External: Integration capabilities as Phase 2 tools"]
+    end
+
+    subgraph Execution["Execution & Orchestration"]
+        Workflow["WorkflowEngine: topo-sort, step trace, retries, timeout"]
+        Worker["WorkflowWorker: DB queue claim, recover_stale, DLQ"]
+        Scheduler["WorkflowScheduler: triggers → queued executions"]
+        Orch["Orchestrator: Planner→Selector→Bus→Synthesizer"]
+        Bus["AgentMessageBus: authorized, persisted, correlation_id"]
+    end
+
+    subgraph Knowledge["Knowledge & Memory"]
+        Memory["MemoryService: 5 types, hybrid retrieval, TTL, extraction"]
+        Retrieval["HybridRetriever: semantic+keyword+recency+importance+confidence"]
+        Embedding["EmbeddingProvider: Mock (deterministic) / OpenAI (scaffold)"]
+    end
+
+    subgraph Reliability["Reliability (Phase 6)"]
+        Verify["VerificationService: 6 strategies, deterministic-first"]
+        Recover["RecoveryEngine: 10 strategies, budgets, state machine"]
+        Eval["Evaluation: metrics, datasets, regression detection"]
+    end
+
+    subgraph Org["Organization (Ph 7–8)"]
+        EmpOS["EmployeeManager: identity, skills, goals, workload, assignment, performance"]
+        CompOS["CompanyManager: companies, depts, KPIs, budgets, policies, decisions, health"]
+    end
+
+    subgraph Autonomy["Autonomy (Ph 9)"]
+        Mission["Mission: analyze→validate→plan"]
+        Bootstrap["Bootstrap: company + workforce provisioning"]
+        Cycle["OperatingEngine: 10-stage governed cycle"]
+        Gates["AutonomyService + ApprovalGateManager: one action per gate"]
+    end
+
+    subgraph External_Funnel["External Funnel (Ph 10)"]
+        ExtMgr["ExternalActionManager: risk→policy→approval→exec→verify→recover→audit"]
+        Creds["Reference-only credentials (never in DB)"]
+        BrowserComp["Simulated browser/computer (bounded, UNTRUSTED)"]
+    end
+
+    subgraph Governance["Governance & Security (Ph 11)"]
+        AuthZ["AuthorizationService + PolicyEngine (most-restrictive-wins)"]
+        Secrets["Fernet AES-256-GCM at rest, redaction filter, mask hints"]
+        Audit["Append-only hash-chained audit + /verify"]
+        Kill["KillSwitch + ResourceLimits + BreakGlass + FeatureFlags"]
+        Detect["13-category Detection → Alert → Incident → Containment"]
+    end
+
+    subgraph Intelligence["Simulation & Intelligence (Ph 12)"]
+        Sim["SimulationEngine: sandbox, Monte-Carlo, DigitalTwin — SIMULATED/FORECAST"]
+        Opt["OptimizationEngine: proposes, policy/budget filter, 10-part explainability, gate"]
+        Exp["ExperimentEngine: approval-gated, honest WINNER/LOSER/INCONCLUSIVE"]
+        Bench["BenchmarkEngine: 8 dimensions, reuses Ph6 metrics"]
+        Market["Marketplace: metadata-only, PackageScanner, evidence recs, approval-gated"]
+        Loop["Closed Loop: OBSERVE→SIMULATE→OPTIMIZE→PROPOSE→APPROVE→EXECUTE→MEASURE→LEARN"]
+    end
+
+    Runtime --> Perm
+    Perm --> Exec
+    Exec --> Builtin
+    Exec --> ExtTools
+    Runtime --> Workflow
+    Runtime --> Orch
+    Orch --> Bus
+    Runtime --> Memory
+    Memory --> Retrieval
+    Retrieval --> Embedding
+    Workflow --> Worker
+    Workflow --> Scheduler
+    Runtime --> Verify
+    Verify --> Recover
+    Verify --> Eval
+    Runtime --> EmpOS
+    EmpOS --> CompOS
+    CompOS --> Mission
+    Mission --> Bootstrap
+    Bootstrap --> Cycle
+    Cycle --> Gates
+    Gates --> ExtMgr
+    ExtMgr --> Creds
+    ExtMgr --> BrowserComp
+    AuthZ --> Secrets
+    AuthZ --> Audit
+    AuthZ --> Kill
+    AuthZ --> Detect
+    Sim --> Opt
+    Opt --> Exp
+    Exp --> Bench
+    Bench --> Market
+    Market --> Loop
+    Loop --> Sim
+    Cycle --> Loop
+
+    classDef reason fill:#e3f2fd,stroke:#1565c0;
+    classDef tool fill:#fff3e0,stroke:#ef6c00;
+    classDef exec fill:#e8f5e9,stroke:#2e7d32;
+    classDef know fill:#fce4ec,stroke:#c2185b;
+    classDef rel fill:#f3e5f5,stroke:#7b1fa2;
+    classDef org fill:#fff8e1,stroke:#f57f17;
+    classDef auto fill:#f1f8e9,stroke:#558b2f;
+    classDef ext fill:#fafafa,stroke:#424242;
+    classDef gov fill:#eceff1,stroke:#37474f;
+    classDef int fill:#e0f2f1,stroke:#00695c;
+
+    class Runtime reason;
+    class Perm,Exec,Builtin,ExtTools tool;
+    class Workflow,Worker,Scheduler,Orch,Bus exec;
+    class Memory,Retrieval,Embedding know;
+    class Verify,Recover,Eval rel;
+    class EmpOS,CompOS org;
+    class Mission,Bootstrap,Cycle,Gates auto;
+    class ExtMgr,Creds,BrowserComp ext;
+    class AuthZ,Secrets,Audit,Kill,Detect gov;
+    class Sim,Opt,Exp,Bench,Market,Loop int;
+```
+
+---
+
+## 3. Overview
 
 NEXUS is an **Autonomous AI Workforce & Company OS**. The eventual product lets a user state a business objective and have a coordinated system of AI agents plan, execute, verify, and report on work — using external tools, memory, and controlled data.
 

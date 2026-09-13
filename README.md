@@ -1,18 +1,239 @@
 # NEXUS
 
-**An Autonomous AI Workforce & Company OS.**
+**An Autonomous AI Workforce & Company OS — not a chatbot.**
 
-NEXUS lets you hand a high-level business objective to a system of AI agents that plans, coordinates, and executes toward it. It combines three long-term ambitions into one platform:
+Hand a high-level business objective to a system of AI agents that plans,
+coordinates, executes, verifies, heals, simulates, and recommends — inside a
+company structure with governance, approvals, and full auditability.
 
-1. **AI Company in a Box** — a full company operating on AI.
-2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
-3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
-
-> **Status: Phase 12 (Simulation, Optimization & Agent Marketplace).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform. Phase 8 adds the **AI Company Layer**: companies, departments, org chart, company goals, KPIs (computed from authoritative data), budgets (company→department hierarchy), policies (most-restrictive-wins resolution), decisions (with audit-trail review), risks, alerts, company health scoring, analytics, and reporting — the organizational layer above the Employee OS. Phase 9 adds the **Autonomous Startup Engine**: missions, strategic & startup planning, company bootstrap, controlled workforce provisioning, products/projects, governed operating cycles, feedback & replanning, human approval gates, a mission traceability graph, and bounded-autonomy governance — the engine that *drives* a business mission end to end. Phase 10 adds **External Integrations & Computer Use**: a governed external layer — integrations with capabilities that register as Permission-gated tools, an immutable external-action journal with risk → policy → approval → execution → verification → recovery → audit, reference-only credentials (no secrets at rest), bounded simulated browser and computer sessions with untrusted-observation labeling, SSRF/prompt-injection/data-exfiltration/webhook security, cross-company 404 isolation — the layer that lets NEXUS touch the outside world *safely*. Phase 11 adds **Security, Governance & Production Hardening**: an enforcement layer that composes Phases 0–10 — Fernet AES-256-GCM secrets, HS256 auth + RBAC/ABAC + policy engine, append-only hash-chained audit, 13-category detection → alerts → incidents with audited containment, kill switch, resource/approval/break-glass governance, SSRF/filesystem/tool/context hardening, observability & reliability (telemetry, metrics, redaction, middleware, DLQ, health probes), and a production-readiness gate. Phase 12 adds **Simulation, Optimization & Agent Marketplace**: a closed-sandbox simulation engine (deterministic by default with optional seeded multi-run Monte-Carlo, a versioned digital-twin snapshot reader, workforce/budget/KPI/risk simulators, checkpoints, and baseline-vs-scenario comparisons) whose outputs are always labeled SIMULATED / FORECAST — never ACTUAL; a weighted multi-objective optimization engine (greedy/exhaustive/ranking strategies) that rejects policy- and budget-violating candidates before scoring and ships every recommendation with the §46 ten-part explainability block behind an ApprovalGateManager gate — no auto-production-replacement; an approval-gated experiment lifecycle with honest WINNER / LOSER / INCONCLUSIVE conclusions; a versioned 8-dimension agent benchmarking engine; an internal metadata-only agent marketplace with a static PackageScanner and safe approval-gated install (§37) plus evidence-based agent recommendations; and a closed-loop OBSERVE → SIMULATE → OPTIMIZE → PROPOSE → APPROVE → EXECUTE → MEASURE → LEARN → RE-SIMULATE orchestration that records references only and reuses Phase 11 resource budgets and Phase 9 approval gates — 43 additive tables behind `/api/v1/simulations`, `/optimization`, `/experiments`, `/benchmarks`, `/marketplace`, `/agent-recommendations`, and `/optimization-cycles`.
+> **Status:** Phases 0–12 complete + Final Engineering/Portfolio Pass. Phase 13
+> is planned (preview only — not started). No self-modification / RL; no
+> auto-production-replacement; simulation outputs are always SIMULATED/FORECAST,
+> never ACTUAL.
 
 ---
 
-## Phase 1 — Agent Runtime
+## What NEXUS Does
+
+Three converging ambitions, one platform:
+
+1. **AI Company in a Box** — a full company operating on AI (companies,
+   departments, org chart, KPIs, budgets, policies, decisions, risks, health).
+2. **AI Employee OS** — a runtime for individual AI workers with memory, tools,
+   skills, goals, and supervision.
+3. **Autonomous Startup / Business Engine** — continuously drives a business
+   mission end to end, governed by approval gates and bounded autonomy.
+
+The engineering goal, in a few principles:
+
+- **Provider independence** — LLM access goes only through a `ModelProvider`
+  abstraction; the deterministic `MockProvider` runs the entire stack with no
+  API key (tests + CI).
+- **Security by default** — clean boundaries between reasoning, tool execution,
+  authorization, and external side effects.
+- **Reuse over duplicate** — every later phase composes earlier ones; there is
+  no second execution/memory/company/governance system.
+- **Honest labels** — SIMULATED / FORECAST outputs, RECOMMENDATION language,
+  no invented production claims.
+
+---
+
+## Architecture
+
+Master diagram (rendered): [docs/architecture.md](docs/architecture.md) — §§1–2
+contains the full Mermaid **master architecture flowchart** (§37) and the
+**responsibility-boundary diagram** (§4).
+
+Simplified view:
+
+```
+Browser/web ──▶ NEXUS Web (Next.js) ──proxy──▶ NEXUS API (FastAPI)
+                            │                        │
+                       /api/v1 routers         /health/live|ready|dependencies
+                            │                        │
+            ┌───────────────┴───────────────────────┐
+   Core     │ Agent Runtime · Tools · Workflows ·   │
+            │ Memory · Orchestration · Verify ·     │
+            │ Recovery · Evaluation                 │
+   Org      │ Employee OS ─▶ Company Layer          │
+   Mission  │ Autonomous Startup Engine (gates)     │
+   External │ Govt funnel: risk→policy→approval→exec│
+   Security │ Identity · RBAC/ABAC · Fernet secrets │
+            │ Hash-chained audit · Kill switch      │
+   Phase 12 │ Simulation → Optimization → Benchmarks│
+            │ → Marketplace → Closed Loop           │
+            └──────────────┬───────────────────────┘
+                     PostgreSQL 16 (+ Redis option)
+```
+
+12 layers, bottom → top: Foundation → Agent Runtime → Tools → Workflows →
+Memory → Multi-Agent Orchestration → Verification/Recovery/Evaluation →
+Employee OS → Company Layer → Autonomous Startup Engine → External Integrations
+→ Security/Governance → Simulation/Optimization/Marketplace. Every tenant-scoped
+table carries a `company_id` FK + index.
+
+---
+
+## Core Capabilities
+
+| Area | What it does | Phase |
+|------|--------------|-------|
+| Agent Runtime | `validate → context → tool loop → parse → persist`; typed `AgentExecution` | 1 |
+| Tool & Action System | Permission-gated registry (`ToolExecutor`), 4 built-ins | 2 |
+| Workflow Orchestration | Dependency-ordered steps, retry/timeout/conditions, DB-as-queue worker + scheduler | 3 |
+| Memory | 5 types, hybrid retrieval (semantic+keyword+recency), namespace isolation, auto-extraction | 4 |
+| Multi-Agent Orchestration | Planner → Selector → Orchestrator → Bus → Synthesizer (conflicts + attribution) | 5 |
+| Verification / Recovery / Evaluation | Shared verifier (6 strategies), bounded self-healing (10 strategies), regressions | 6 |
+| AI Employee OS | Identity, skills, goals, workload, assignment, performance, templates, audit | 7 |
+| AI Company Layer | Companies, departments, KPIs (computed), budgets (hierarchical), policies (MRW), decisions, risks, alerts, health | 8 |
+| Autonomous Startup Engine | Mission → plan → bootstrap → operating cycles → feedback → replan; approval gates; bounded autonomy | 9 |
+| External Integrations & Computer Use | Gov't funnel, reference-only credentials, simulated browser/computer, SSRF/prompt-injection | 10 |
+| Security, Governance & Production Hardening | HS256 auth, RBAC/ABAC, Fernet secrets, hash-chained audit, kill switch, resource limits, telemetry | 11 |
+| Simulation, Optimization & MarketPlace | Closed-sandbox simulation, multi-objective optimization (proposes → gate decides), experiments, benchmarks, internal marketplace, closed loop | 12 |
+
+---
+
+## Technology Stack *(implemented only)*
+
+- **Backend**: FastAPI + SQLAlchemy + Alembic (head `0014_phase12_sim_opt_mkt`), Python 3.14, psycopg (PostgreSQL 16), pydantic-settings.
+- **Frontend**: Next.js 16 (App Router), React 19, Tailwind v4, TypeScript (strict), vitest.
+- **Infrastructure**: Docker Compose (postgres/redis/api/web, healthchecks), auto-migration entrypoint (`AUTO_MIGRATE`), CI with migration round-trip + readiness gate.
+- **AI**: provider-agnostic `ModelProvider` (mock deterministic; OpenAI/Anthropic adapters behind the same seam, env-keyed, optional).
+
+---
+
+## Quick Start
+
+### One-command stack (Docker)
+
+```bash
+cp .env.example .env          # edit if needed
+docker compose up --build -d
+```
+
+The API container auto-runs `alembic upgrade head` on boot
+(`docker-entrypoint.sh`; opt out with `AUTO_MIGRATE=false`). Then:
+
+- Web: <http://localhost:3000>
+- API docs: <http://localhost:8000/docs>
+- Health: <http://localhost:8000/api/v1/health/live> · `/ready` · `/dependencies`
+
+### Full seeded demo
+
+```bash
+bash scripts/run_demos.sh     # docker PG/Redis → migrate → 5 seeds (--reset) → Phase 11+12 smoke (0×5xx)
+```
+
+Open **`docs/demo.md`** for the 14-item reviewer's checklist (§49) mapped to
+exact commands, UI pages, and ACTUAL/SIMULATED/FORECAST/RECOMMENDATION labels.
+
+### Local dev (host servers)
+
+```bash
+./scripts/setup.sh            # one-shot bootstrap (venv, deps, infra)
+docker compose up -d postgres redis
+cd apps/api && source .venv/bin/activate && alembic upgrade head && uvicorn app.main:app --reload
+cd apps/web && npm install && npm run dev
+```
+
+---
+
+## Security
+
+NEXUS composes Phase 11 security, governance & observability: HS256 auth +
+RBAC/ABAC + policy engine (most-restrictive-wins), Fernet AES-256-GCM secrets
+from env only, append-only hash-chained audit with `verify_chain()`, SSRF +
+prompt-injection + filesystem + tool-escalation hardening, kill switch scopes,
+resource limits, redaction, telemetry/metrics. Health probes at
+`/api/v1/health/{live,ready,dependencies}` never leak secret values.
+
+**Boundaries (never claimed):** no compliance certifications, no production
+SLAs (perf numbers are dev-environment measurements), no managed vault, no
+real-LLM production deployment. Optimizations **propose** — governance
+**decides**. Simulation outputs are forecasts, never commitments.
+
+- [docs/security.md](docs/security.md) · [docs/threat-model.md](docs/threat-model.md)
+- [docs/operations.md](docs/operations.md) · [docs/incident-response.md](docs/incident-response.md)
+- [docs/disaster-recovery.md](docs/disaster-recovery.md) · [docs/data-governance.md](docs/data-governance.md)
+
+---
+
+## Testing
+
+```bash
+# Backend (from apps/api)
+.venv/bin/pytest -q                                # 1085+ tests across 94 files
+.venv/bin/ruff check app tests scripts
+.venv/bin/ruff format --check app tests scripts
+
+# Frontend (from apps/web)
+npx tsc --noEmit && npm run lint && npm run build && npx vitest run   # 141 tests
+
+# Perf baseline (dev-environment measurements, not SLAs)
+cd apps/api && .venv/bin/python -m scripts.perf_baseline
+```
+
+CI (`.github/workflows/ci.yml`) runs backend (ruff, pytest), **migration
+round-trip** (`upgrade head` → `downgrade base` → `upgrade head` on a Postgres
+service container), non-blocking `production_readiness`, and frontend
+(lint/tsc/vitest/build) plus Docker build.
+
+---
+
+## Project Structure
+
+```
+nexus-ai/
+├── apps/
+│   ├── api/        # FastAPI backend
+│   │   ├── app/
+│   │   │   ├── core/        # config, logging, errors, telemetry, metrics, redaction
+│   │   │   ├── api/v1/      # versioned HTTP endpoints + health probes
+│   │   │   ├── ai/          # ModelProvider abstraction + (mock/anthropic/openai)
+│   │   │   ├── db/models/   # SQLAlchemy models (90+ tables, phases 0–12)
+│   │   │   ├── schemas/     # Pydantic contracts
+│   │   │   ├── services/    # persistence + runtime assembly
+│   │   │   ├── runtime/  tools/  workflow/  memory/
+│   │   │   ├── orchestration/  verification/  recovery/  evaluation/
+│   │   │   ├── employee/   company/   startup/   external/   security/
+│   │   │   ├── phase12/    # simulation, optimization, experiments, benchmarks, marketplace, closed loop
+│   │   │   └── checks/     # production_readiness
+│   │   ├── alembic/        # migrations (0014 = Phase 12 head)
+│   │   ├── scripts/        # 5 seeds, smoke_api, perf_baseline
+│   │   └── tests/          # 1085+ tests (SQLite, MockProvider)
+│   └── web/        # Next.js frontend (approvals, settings, phase-12 centers, shells)
+│       ├── src/app/
+│       ├── src/components/
+│       └── src/lib/        # API client, types, navigation
+├── docs/           # portfolio set: architecture, security, operations, portfolio,
+│                   # case-study, demo, final-readiness, roadmap + phase references
+├── infrastructure/docker/  # Dockerfiles + docker-entrypoint.sh
+├── scripts/        # run_demos.sh, setup.sh
+├── docker-compose.yml
+└── .env.example    # documented environment variables
+```
+
+---
+
+## Documentation
+
+- **Portfolio**: [portfolio](docs/portfolio.md) · [case-study](docs/case-study.md) · [final-readiness](docs/final-readiness.md)
+- **Run & demo**: [demo guide (14-item checklist)](docs/demo.md) · [operations](docs/operations.md)
+- **Design**: [architecture (master diagram)](docs/architecture.md) · [roadmap](docs/roadmap.md)
+- **Phase references**: [workflows](docs/workflows.md) · [memory](docs/memory.md) · [orchestration](docs/orchestration.md) · [reliability](docs/reliability.md) · [employee-os](docs/employee-os.md) · [company-os](docs/company-os.md) · [phase-9-autonomous-startup](docs/phase-9-autonomous-startup.md) · [phase-10-external-integrations](docs/phase-10-external-integrations.md) · [security-architecture](docs/security-architecture.md) · [phase-11-production-hardening](docs/phase-11-production-hardening.md) · [phase-12](docs/phase-12.md) + topic docs ([simulation](docs/simulation.md) · [optimization](docs/optimization.md) · [experimentation](docs/experimentation.md) · [benchmarking](docs/benchmarking.md) · [agent-marketplace](docs/agent-marketplace.md) · [closed-loop-optimization](docs/closed-loop-optimization.md))
+
+---
+
+## Phase Walkthroughs *(appendix)*
+
+The per-phase walkthroughs — the original "Try it in 60 seconds" guides — are
+preserved verbatim below. They are the hands-on reference for how each layer
+works; the seeded demos in [docs/demo.md](docs/demo.md) are the faster way to
+see everything working at once.
+
+---
+
+### Phase 1 — Agent Runtime
 
 The core loop is **User → API → Agent → Task → Agent Runtime → Model Provider → Agent Result → Execution Record**.
 
@@ -33,7 +254,7 @@ The core loop is **User → API → Agent → Task → Agent Runtime → Model P
 - **Executing a task** runs the runtime pipeline, calls the configured provider, parses the structured `AgentResult`, and persists it as an `AgentExecution` with token usage, cost estimate, and latency.
 - **Mock provider** (`provider = "mock"`) returns deterministic output with no API key, so the whole flow is exercisable locally and in CI.
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Start the stack (or your existing local dev servers)
@@ -58,7 +279,7 @@ The equivalent, nicer flow lives in the UI: **Agents** (create/activate/delete),
 
 ---
 
-## Phase 2 — Tool & Action System
+### Phase 2 — Tool & Action System
 
 The runtime now runs a **tool-calling loop**: after the model generates, if its JSON contains `{"tool_calls": [...]}` the runtime executes each tool through the permission-gated `ToolExecutor`, feeds the results back, and loops — until the model returns a final `AgentResult` or `max_tool_iterations` is reached.
 
@@ -72,7 +293,7 @@ Every tool invocation is validated, authorized, timed-out (per-tool, thread-pool
 
 The **Tools** page in the UI lists every registered tool definition. The **Tasks** page embeds a per-execution tool-call inspector (`ToolCallsSection`) that fetches `GET /api/v1/tools/calls/{execution_id}` on demand.
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Create an active mock agent that requests the calculator tool, then answers
@@ -95,7 +316,7 @@ curl localhost:8000/api/v1/tools/calls/$EXEC_ID
 
 ---
 
-## Phase 3 — Workflow Orchestration
+### Phase 3 — Workflow Orchestration
 
 Workflows compose agents and tools into **durable, dependency-ordered pipelines** with structured data flow, condition branching, retry/timeout, and triggers. Execution state is a single JSON document (`input` + per-step `output`); each step's `input_mapping` pulls values from it by path, so later steps consume earlier steps' output.
 
@@ -103,9 +324,9 @@ Workflows compose agents and tools into **durable, dependency-ordered pipelines*
 
 **Orchestration is durable with zero extra infrastructure**: `workflow_executions` rows act as a **DB-as-queue**; an in-process `WorkflowWorker` claims them atomically and an in-process `WorkflowScheduler` fires due `schedule`/`event`/`webhook` triggers. Both auto-start with the API when `WORKFLOW_WORKER_ENABLED=true` (off in tests) and recover stale runs on restart. Workflow statuses: `draft` → `active` → `paused`.
 
-The **Workflows** page in the UI creates/edit workflows, manages steps and triggers, activates/pauses, and visualizes each execution as a step trace. A `/workflows/[id]` page shows the latest execution running through a step-by-step visualization.
+The **Workflows** page in the UI creates/edits workflows, manages steps and triggers, activates/pauses, and visualizes each execution as a step trace. A `/workflows/[id]` page shows the latest execution running through a step-by-step visualization.
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Create an active mock agent to power the research step
@@ -140,7 +361,7 @@ See [docs/workflows.md](docs/workflows.md) for the full workflow reference.
 
 ---
 
-## Phase 4 — Memory System
+### Phase 4 — Memory System
 
 NEXUS agents now have a **persistent memory**. When an agent completes a task, the runtime auto-extracts memories; on the next run, relevant ones are retrieved and injected into the agent's context — so agents recall prior work across sessions.
 
@@ -152,7 +373,7 @@ NEXUS agents now have a **persistent memory**. When an agent completes a task, t
 
 The **Memories** page in the UI lets you browse, hybrid-search, filter by type/status/agent, create memories manually, archive/delete, clean up expired ones, and page through large stores.
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Create an active mock agent, then create + assign + execute a task
@@ -180,7 +401,7 @@ See [docs/memory.md](docs/memory.md) for the full memory reference.
 
 ---
 
-## Phase 5 — Multi-Agent Orchestration
+### Phase 5 — Multi-Agent Orchestration
 
 NEXUS agents now work as **teams**. Instead of one agent per task, you state an objective and the system assembles a coordinated team to achieve it — decomposed, assigned, executed, and verified together.
 
@@ -193,7 +414,7 @@ NEXUS agents now work as **teams**. Instead of one agent per task, you state an 
 - **Workflows can call orchestrations** — an orchestration is a first-class workflow step type.
 - **Demo** — create four mock agents, set an objective like *"analyze the competitive market and write a report"*, and watch the research team run end to end with no API key.
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Stand up four active mock agents with market-team roles
@@ -220,7 +441,7 @@ See [docs/orchestration.md](docs/orchestration.md) for the full orchestration re
 
 ---
 
-## Phase 6 — Verification, Recovery & Evaluation
+### Phase 6 — Verification, Recovery & Evaluation
 
 NEXUS now knows whether work was **right** — and what to do when it wasn't. A shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest to a human, and an evaluation framework measures how the whole system performs.
 
@@ -230,7 +451,7 @@ NEXUS now knows whether work was **right** — and what to do when it wasn't. A 
 - **Evaluation (`app/evaluation/`)** — named metrics, a deterministic 8-case dataset, persisted runs, run comparison, and regression detection — all provider-independent and testable with no API key.
 - **Dashboards** — **Verifications**, **Recoveries** (with a per-attempt recovery timeline), **Evaluations** (metric bars, comparison, regression), and **Escalations** (approve/reject).
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Create a mock agent that answers 42
@@ -257,7 +478,7 @@ See [docs/reliability.md](docs/reliability.md) for the full reliability referenc
 
 ---
 
-## Phase 7 — AI Employee OS
+### Phase 7 — AI Employee OS
 
 NEXUS now has a **workforce**. AI Employees are persistent entities with organizational identity, skills, goals, policies, budgets, and performance tracking — wrapping existing agents with a management layer that makes them feel like real team members.
 
@@ -276,7 +497,7 @@ NEXUS now has a **workforce**. AI Employees are persistent entities with organiz
 - **Workflow integration** — `EMPLOYEE_TASK` step type lets workflows assign tasks to employees with full context.
 - **Dashboard** — Employee Directory, Employee Detail (5 tabs), Workbench, Goals Dashboard, Performance Dashboard.
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Create an active employee
@@ -305,7 +526,7 @@ See [docs/employee-os.md](docs/employee-os.md) for the full Employee OS referenc
 
 ---
 
-## Phase 8 — AI Company Layer
+### Phase 8 — AI Company Layer
 
 NEXUS now has a **company**. Above the Employee OS sits an organizational layer — companies with departments, an org chart, goals with hierarchical progress, KPIs computed from real execution data, hierarchical budgets, policies that flow through the hierarchy, decisions with audit-trail review, risks, threshold alerts, and company health scoring.
 
@@ -326,7 +547,7 @@ NEXUS now has a **company**. Above the Employee OS sits an organizational layer 
 - **Analytics** — workforce, operations, reliability, finance, and strategy aggregation; deterministic budget projection via `ForecastService`.
 - **Event timeline** — a full audit trail of every significant action, filterable by company.
 
-### Try it in 60 seconds
+#### Try it in 60 seconds
 
 ```bash
 # 1. Create and activate a company
@@ -355,7 +576,7 @@ See [docs/company-os.md](docs/company-os.md) for the full AI Company Layer refer
 
 ---
 
-## Phase 9 — Autonomous Startup Engine
+### Phase 9 — Autonomous Startup Engine
 
 Above the Company Layer, NEXUS now **drives a business mission end to end**. A mission becomes a strategy, a startup plan, and a governed operating company — and then runs **operating cycles** (observe → assess → plan → prioritize → allocate → execute → verify → measure → learn → replan) that are provably traceable and bounded by a per-company **autonomy policy**.
 
@@ -379,7 +600,7 @@ cd apps/api
 .venv/bin/python -m scripts.seed_autonomous_startup   # full chain with injected failure→recovery, replan, approval gate
 ```
 
-## Phase 10 — External Integrations & Computer Use
+### Phase 10 — External Integrations & Computer Use
 
 Above the Company and Startup layers, NEXUS can now **interact with the outside world safely**. External providers register as company-scoped **integrations**; their capabilities materialize as **Permission-gated tools**; every call flows through one governed funnel — risk → policy → autonomy → approval → execution → scrub → verify → recover → memory → audit — into an immutable external-action journal.
 
@@ -401,7 +622,7 @@ cd apps/api
 
 ---
 
-## Phase 11 — Security, Governance & Production Hardening
+### Phase 11 — Security, Governance & Production Hardening
 
 NEXUS is now **secure by default and governed**, without a second execution/memory/company/system. Phase 11 is an *enforcement layer* that composes Phases 0–10 along one invariant chain — `IDENTITY → AUTHORIZATION → POLICY → RESOURCE LIMIT → APPROVAL → ACTION → VERIFICATION → AUDIT → OBSERVABILITY → RECOVERY` — and every refusal is **recorded**, never silently dropped.
 
@@ -414,8 +635,6 @@ NEXUS is now **secure by default and governed**, without a second execution/memo
 - **Reliability & observability** — telemetry/request-id, dependency-free metrics, central redaction, security-headers/trusted-hosts/request-size/rate-limit/idempotency middleware, worker heartbeat + stale recovery + **dead-letter queue**, `/health/live|ready|dependencies`, JSON logs.
 - **Checks & demo** — `python -m app.checks.production_readiness` (PASS/WARN/FAIL; FAILs production without auth/encryption keys) and the deterministic Security & Governance demo (7 attacks → blocked + audited, failure-recovery drill, 100-task benchmark).
 
-Open the **Control Center** in the sidebar (`/control`) when Wave I lands to inspect posture, governance, security events, audit chain, incidents, and health. Secret values are never rendered.
-
 See [docs/security-architecture.md](docs/security-architecture.md) for the design, [docs/threat-model.md](docs/threat-model.md) for the threat lens, [docs/incident-response.md](docs/incident-response.md) and [docs/disaster-recovery.md](docs/disaster-recovery.md) for ops runbooks, and [docs/data-governance.md](docs/data-governance.md) for the data side. The demo:
 
 ```bash
@@ -426,7 +645,7 @@ DATABASE_URL="sqlite:////tmp/nexus_secdemo.db" \
 
 ---
 
-## Phase 12 — Simulation, Optimization & Agent Marketplace
+### Phase 12 — Simulation, Optimization & Agent Marketplace
 
 Phase 12 lets NEXUS **reason forward before deciding**: model an organization in a closed sandbox, optimize governed alternatives, run approval-gated experiments, benchmark and recommend agents, and close the loop observe → simulate → optimize → propose → approve → execute → measure → learn. It composes Phases 0–11 (reusing Phase 11 resource limits + policy, Phase 9 approval gates + lessons, Phase 8 KPIs, Phase 6 evaluation metrics) and builds no second runtime/memory/company/governance system.
 
@@ -445,226 +664,3 @@ cd apps/api
 DATABASE_URL="sqlite:////tmp/nexus_p12_demo.db" \
   .venv/bin/python -m scripts.seed_simulation_optimization [--reset]   # parts 1–6 + §69 E2E, every outcome asserted SIMULATED
 ```
-
----
-
-## Quick Start
-
-The fastest way to see the whole stack running is Docker Compose:
-
-```bash
-# 1. Create your environment file
-cp .env.example .env
-
-# 2. Build and start everything (Postgres, Redis, API, Web)
-docker compose up --build
-```
-
-Then open:
-
-- Frontend dashboard: <http://localhost:3000>
-- API docs (Swagger): <http://localhost:8000/docs>
-- Health check: <http://localhost:8000/api/v1/health>
-
-### Applying database migrations
-
-Migrations run separately from the app so schema concerns stay distinct from the runtime. With Postgres up:
-
-```bash
-cd apps/api
-source .venv/bin/activate
-alembic upgrade head
-```
-
----
-
-## Local Development (without Docker for the app)
-
-Run Postgres and Redis in Docker, and the app servers directly on the host:
-
-```bash
-# One-shot bootstrap (recommended)
-./scripts/setup.sh
-```
-
-Or, step by step:
-
-```bash
-# Backend
-cd apps/api
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-alembic upgrade head
-uvicorn app.main:app --reload          # http://localhost:8000
-
-# Frontend (in a second terminal)
-cd apps/web
-npm install
-npm run dev                            # http://localhost:3000
-
-# Infrastructure (Postgres + Redis)
-cd <repo root>
-docker compose up -d postgres redis
-```
-
----
-
-## Running Tests & Checks
-
-```bash
-# Backend tests
-cd apps/api && source .venv/bin/activate
-pytest -v
-
-# Backend lint + format
-ruff check app tests
-ruff format --check app tests
-
-# Frontend lint + typecheck + build + tests
-cd apps/web
-npm run lint
-npx tsc --noEmit
-npm run build
-npm run test -- --run
-```
-
----
-
-## Project Structure
-
-```
-nexus-ai/
-├── apps/
-│   ├── api/        # FastAPI backend (Python)
-│   │   ├── app/
-│   │   │   ├── core/       # config, logging, errors, redis
-│   │   │   ├── api/v1/     # versioned HTTP endpoints
-│   │   │   ├── ai/         # provider-agnostic model abstraction (incl. mock)
-│   │   │   ├── db/models/  # SQLAlchemy models: agents, tasks, tools, workflows, memories, orchestrations, reliability, employees
-│   │   │   ├── schemas/    # Pydantic request/response contracts
-│   │   │   ├── services/   # persistence + runtime assembly (CRUD)
-│   │   │   ├── verification/ # Phase 6: 6 strategies + policy + service
-│   │   │   ├── recovery/   # Phase 6: diagnosis, planner, engine, state machine, escalation
-│   │   │   ├── evaluation/ # Phase 6: metrics, dataset, runner, comparison, regression
-│   │   │   ├── memory/     # embedding, retrieval, policies, extraction
-│   │   │   ├── orchestration/ # multi-agent engine: planner, selector, orchestrator, bus, synthesizer
-│   │   │   ├── runtime/    # Agent Runtime + context builder
-│   │   │   ├── employee/   # AI Employee OS: lifecycle, skills, goals, workload, assignment, performance
-│   │   │   ├── phase12/   # Phase 12: simulation, optimization, experiments, benchmarking, marketplace, closed loop
-│   │   │   ├── tools/      # tool registry, executor, permissions, built-ins
-│   │   │   └── workflow/   # engine, conditions, validator, worker, scheduler
-│   │   ├── alembic/        # database migrations
-│   │   └── tests/          # unit, integration, and E2E tests (SQLite)
-│   └── web/        # Next.js frontend (TypeScript, Tailwind)
-│       ├── src/app/        # App Router pages + layout + API proxy
-│       ├── src/components/ # sidebar, header, dashboard, status badges
-│       └── src/lib/        # API client, shared types, nav config
-├── docs/           # architecture, roadmap
-├── infrastructure/
-│   └── docker/     # Dockerfiles for api and web
-├── scripts/        # developer tooling (setup.sh)
-├── docker-compose.yml
-└── .env.example    # documented environment variables
-```
-
----
-
-## Environment Variables
-
-All configuration flows through environment variables — **no secrets or hardcoded values** are committed. Copy `.env.example` to `.env` and adjust. Key variables:
-
-| Variable                | Description                          | Default (dev)                         |
-| ----------------------- | ------------------------------------ | ------------------------------------- |
-| `ENVIRONMENT`           | `development` / `test` / `production` | `development`                         |
-| `LOG_LEVEL`             | Application log level                | `INFO`                                |
-| `DATABASE_URL`          | SQLAlchemy Postgres connection URL   | `postgresql+psycopg://...@localhost:5433/nexus` |
-| `POSTGRES_USER`         | Postgres user                        | `nexus`                               |
-| `POSTGRES_PASSWORD`     | Postgres password                    | `nexus_dev`                           |
-| `POSTGRES_DB`           | Postgres database name               | `nexus`                               |
-| `REDIS_URL`             | Redis connection URL                 | `redis://localhost:6379/0`            |
-| `API_HOST` / `API_PORT` | API bind address and port            | `0.0.0.0` / `8000`                    |
-| `CORS_ORIGINS`          | Allowed browser origins              | `["http://localhost:3000"]`           |
-| `API_BASE_URL`          | Frontend→backend proxy target        | `http://localhost:8000`               |
-| `WORKFLOW_WORKER_ENABLED` | Auto-start the workflow worker + scheduler in the API | `false` |
-| `WORKFLOW_EXECUTE_SYNC`   | Run `POST /workflows/{id}/execute` inline (used by tests) | `false` |
-| `MEMORY_EMBEDDING_PROVIDER` | Embedding provider for semantic retrieval (`mock`/`openai`/unset) | *(unset)* |
-| `MEMORY_RETRIEVAL_CONTEXT_BUDGET` | Max chars of memory content injected into context | `5000` |
-| `MEMORY_RETRIEVAL_RELEVANCE_THRESHOLD` | Minimum hybrid score for a memory to be retrieved | `0.3` |
-| `MEMORY_WRITE_MIN_IMPORTANCE` | Memories below this importance are not stored | `0.1` |
-| `MEMORY_WRITE_DEFAULT_TTL_HOURS` | Working-memory TTL in hours | `24` |
-| `MEMORY_EXTRACTION_ENABLED` | Auto-extract memories from completed executions | `true` |
-| `ORCHESTRATION_EXECUTE_SYNC` | Run `POST /orchestrations/{id}/execute` inline (used by tests) | `false` |
-| `ORCHESTRATION_MAX_TASKS` | Max decomposed tasks per orchestration | `50` |
-| `ORCHESTRATION_MAX_AGENTS` | Max agents participating in one orchestration | `20` |
-| `ORCHESTRATION_MAX_PARALLEL_AGENTS` | Thread-pool size for parallel task execution | `5` |
-| `ORCHESTRATION_MAX_EXECUTION_DURATION_SECONDS` | Wall-clock cap for an orchestration run | `3600` |
-| `ORCHESTRATION_MAX_MESSAGES_PER_ORCHESTRATION` | Cap on inter-agent messages per run | `500` |
-| `ORCHESTRATION_MAX_REVIEW_ITERATIONS` | Cap on review revision loops | `3` |
-| `ORCHESTRATION_CONFLICT_NUMERIC_THRESHOLD` | Relative-diff that flags a numeric conflict | `0.2` |
-| `ORCHESTRATION_MEMORY_NAMESPACE` | Memory namespace for orchestration context | `orchestration` |
-| `VERIFICATION_ENABLED` | Run verification hooks during execution | `false` |
-| `VERIFICATION_DEFAULT_POLICY` | Default verification policy (JSON) | `{}` |
-| `RECOVERY_ENABLED` | Enable the recovery engine | `false` |
-| `RECOVERY_EXECUTE_SYNC` | Run recovery inline (used by tests) | `false` |
-| `RECOVERY_MAX_ATTEMPTS` | Bounded max recovery attempts per execution | `3` |
-| `EVALUATION_REGRESSION_THRESHOLD` | Δ below which a score drop flags regression | `0.05` |
-| `ESCALATION_AUTO_APPROVE` | Auto-approve escalations (never in production) | `false` |
-| `EMPLOYEE_DEFAULT_CAPACITY` | Default max concurrent tasks per employee | `5` |
-| `EMPLOYEE_MAX_CONCURRENT_TASKS` | System-wide max concurrent tasks per employee | `5` |
-| `EMPLOYEE_BUDGET_DEFAULT_MONTHLY` | Default monthly budget per employee ($) | `50.0` |
-| `EMPLOYEE_EVALUATION_ON_TASK_COMPLETE` | Auto-evaluate employee on task completion | `false` |
-| `EMPLOYEE_CONTEXT_MAX_TOKENS` | Max tokens in employee context | `4000` |
-| `EMPLOYEE_AUDIT_ENABLED` | Enable employee audit logging | `true` |
-| `AUTH_ENABLED` | Enforce authentication + RBAC on all `/api/v1` routes (**true in production**) | `false` |
-| `JWT_SECRET_KEY` | HMAC-SHA256 signing key for access tokens (required by `production_readiness` in prod) | *(empty)* |
-| `SECRET_ENCRYPTION_KEY` | Fernet (AES-256-GCM) at-rest encryption key (required by `production_readiness` in prod) | *(empty)* |
-| `SECURE_AUTH_COOKIES` | Set secure/samesite cookies (turn on behind TLS) | `false` |
-| `TRUSTED_HOSTS` | Host-header allow-list for the trusted-hosts middleware | `[]` |
-| `RATE_LIMIT_ENABLED` | Sliding-window in-process rate limiting (default/auth/external/expensive) | `false` |
-| `LOGGING_JSON` | Structured JSON log output | `false` |
-| `DLQ_ENABLED` | Dead-letter queue for failed worker/job executions (never silent loss) | `true` |
-
-AI provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) are reserved for later phases and are not required now.
-
-> **Important:** never commit `.env` files. They are git-ignored by default.
-
----
-
-## How the Frontend Reaches the Backend
-
-The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all route (`src/app/api/[...path]/route.ts`). Each request resolves `API_BASE_URL` fresh (default `localhost:8000`), so it works in local dev and in Docker without baking env vars at build time. The browser only ever talks to its own origin, so there is no CORS friction. Set `API_BASE_URL` if the backend is not on `localhost:8000`. The one exception is the health widget on the dashboard, which still uses the `/api/v1` proxy like everything else.
-
----
-
-## Documentation
-
-- [Architecture](docs/architecture.md) — system design, components, and key decisions.
-- [Workflows](docs/workflows.md) — the Phase 3 workflow orchestration reference (step types, conditions, triggers, worker/scheduler, API).
-- [Memory](docs/memory.md) — the Phase 4 memory system reference (memory types, hybrid retrieval, extraction, config, API).
-- [Orchestration](docs/orchestration.md) — the Phase 5 multi-agent orchestration reference (planner, selection, execution, communication bus, synthesis, review, API).
-- [Reliability](docs/reliability.md) — the Phase 6 reference (verification strategies & policies, failure taxonomy, recovery engine, escalation, evaluation & regression, safety model).
-- [Employee OS](docs/employee-os.md) — the Phase 7 AI Employee OS reference (lifecycle, skills, goals, assignment engine, workload, performance, templates, context, audit, API).
-- [AI Company Layer](docs/company-os.md) — the Phase 8 reference (companies, departments, org chart, goals, KPIs, budgets, policies, decisions, risks, alerts, health, reports, analytics, API).
-- [Autonomous Startup Engine](docs/phase-9-autonomous-startup.md) — the Phase 9 reference (missions, startup planning & bootstrap, operating cycles, autonomy & approval gates, feedback & replanning, observation, mission graph, API).
-- [External Integrations & Computer Use](docs/phase-10-external-integrations.md) — the Phase 10 reference (integration layer, capability tools, the external-action funnel, reference-only credentials, browser/computer safety models, security, demo).
-- [Security & Governance Architecture](docs/security-architecture.md) — the Phase 11 design (identity/auth/RBAC, policy, secrets & DLP, audit & detection, governance, observability, hardened Phase 10 surfaces, API map, deployment items).
-- [Phase 11 Production Hardening](docs/phase-11-production-hardening.md) — what Phase 11 delivered wave by wave, configuration, and how to verify it.
-- [Threat Model](docs/threat-model.md) — assets → threats → Phase 11 controls → verification (STRIDE-flavored, T1–T12).
-- [Incident Response](docs/incident-response.md) — the Phase 11 incident runbook (lifecycle, SoD roles, audited containment actions, 7 scenarios, escalation rules, demo drill).
-- [Disaster Recovery](docs/disaster-recovery.md) — backup/restore, RPO/RTO, failure modes, and the immutable-audit recovery drill.
-- [Data Governance](docs/data-governance.md) — classification, secrets-at-rest, retention, transfer policy, and the audit account.
-- [Phase 12 Overview](docs/phase-12.md) — what Phase 12 delivered, how to verify it, and honest limits.
-- [Simulation](docs/simulation.md) — the simulation engine, sandbox, simulators, scenarios, clock, digital twin.
-- [Optimization](docs/optimization.md) — multi-objective optimization, governed evaluation, §46 recommendations.
-- [Experimentation](docs/experimentation.md) — approval-gated experiments with honest conclusions.
-- [Benchmarking](docs/benchmarking.md) — versioned 8-dimension agent benchmarks with deterministic scoring.
-- [Agent Marketplace](docs/agent-marketplace.md) — metadata-only packages, PackageScanner, safe install, recommendations.
-- [Closed-Loop Optimization](docs/closed-loop-optimization.md) — the §58 observe→…→learn loop, approval-gated execution.
-- [Roadmap](docs/roadmap.md) — the phased plan from foundation to autonomous business engine.
-
----
-
-## Contributing
-
-This is an active, phased build. Before contributing, read the [roadmap](docs/roadmap.md) to see which phase is current. Keep changes small, typed, and tested; follow the existing lint/format conventions (ruff for Python, ESLint + strict TypeScript for the web app).
