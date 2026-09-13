@@ -2205,3 +2205,413 @@ export interface ExternalDashboard {
   }[];
   pending_approval_count: number;
 }
+
+// ── Phase 11: Security, Governance & Production Hardening ───────────────────
+
+export type IdentityKind =
+  | "user"
+  | "service"
+  | "ai_employee"
+  | "agent"
+  | "company";
+
+export interface IdentityPublic {
+  id: string | null;
+  kind: IdentityKind;
+  name: string;
+  status: string;
+  company_id: string | null;
+  external_ref: string | null;
+}
+
+export interface UserPublic {
+  id: string;
+  identity_id: string;
+  email: string;
+  display_name: string;
+  status: string;
+}
+
+export interface UserCreateInput {
+  email: string;
+  display_name: string;
+  password: string;
+  company_id?: string | null;
+  roles?: string[];
+}
+
+export interface RoleAssignInput {
+  roles: string[];
+  company_id?: string | null;
+}
+
+export interface RolePublic {
+  id: string;
+  name: string;
+  code: string;
+  scope: string;
+  company_id: string | null;
+  description: string | null;
+  builtin: boolean;
+}
+
+export interface PermissionPublic {
+  id: string;
+  code: string;
+  description: string | null;
+  category: string | null;
+  builtin: boolean;
+}
+
+export interface SecretCreateInput {
+  name: string;
+  plaintext: string;
+  company_id?: string | null;
+  kind?: string;
+  rotation_days?: number | null;
+}
+
+/** A secret rendered as a reference + hint — never its value. */
+export interface SecretReference {
+  id: string;
+  name: string;
+  company_id: string | null;
+  kind: string;
+  status: string;
+  mask_hint: string | null;
+  key_id: string;
+  rotation_due_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionResult {
+  access_token: string;
+  refresh_token: string;
+  session_id: string;
+  identity: IdentityPublic;
+  user: UserPublic | null;
+  company_id: string | null;
+}
+
+export interface AuthSessionResponse {
+  identity: IdentityPublic;
+  user: UserPublic | null;
+  roles: string[];
+  permissions: string[];
+}
+
+export interface SystemFlagPublic {
+  id: string;
+  scope: string;
+  tenant_id: string | null;
+  flag: string;
+  status: string;
+  reason: string | null;
+  set_by: string | null;
+  set_at: string;
+  cleared_at: string | null;
+}
+
+export interface FlagSetInput {
+  flag: string;
+  reason?: string | null;
+  tenant_id?: string | null;
+}
+
+export interface PolicyRuleInput {
+  scope?: string;
+  company_id?: string | null;
+  subject_pattern?: string;
+  action_pattern: string;
+  resource_pattern?: string;
+  effect: string;
+  risk_level?: string;
+  priority?: number;
+  reason?: string | null;
+  enabled?: boolean;
+}
+
+export interface PolicyRulePublic {
+  id: string;
+  scope: string;
+  company_id: string | null;
+  subject_pattern: string;
+  action_pattern: string;
+  resource_pattern: string;
+  effect: string;
+  risk_level: string;
+  priority: number;
+  reason: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface PolicyDecisionPublic {
+  id: string;
+  company_id: string | null;
+  identity_id: string | null;
+  action: string;
+  resource: string | null;
+  decision: string;
+  reason: string | null;
+  matched_rule_scope: string | null;
+  created_at: string;
+}
+
+export interface ResourceLimitInput {
+  scope?: string;
+  tenant_id?: string | null;
+  category: string;
+  max_value: number;
+  period?: string;
+  enforced?: boolean;
+}
+
+export interface ResourceLimitPublic {
+  id: string;
+  scope: string;
+  tenant_id: string | null;
+  category: string;
+  max_value: number;
+  period: string | null;
+  enforced: boolean;
+}
+
+export interface ResourceUsagePublic {
+  id: string;
+  company_id: string | null;
+  tenant_id: string | null;
+  actor_id: string | null;
+  category: string;
+  amount: number;
+  unit: string | null;
+  instrument: string | null;
+  recorded_at: string;
+}
+
+export interface BreakGlassInput {
+  scope?: string;
+  reason: string;
+  max_minutes?: number | null;
+}
+
+export interface BreakGlassPublic {
+  id: string;
+  identity_id: string;
+  company_id: string | null;
+  scope: string;
+  reason: string;
+  status: string;
+  requested_at: string;
+  expires_at: string;
+  approved_by: string | null;
+  revoked_at: string | null;
+}
+
+export interface FeatureFlagInput {
+  enabled: boolean;
+  rationale?: string | null;
+}
+
+export interface FeatureFlagPublic {
+  id: string;
+  scope: string;
+  company_id: string | null;
+  name: string;
+  enabled: boolean;
+  rationale: string | null;
+  updated_at: string;
+}
+
+export interface GovernanceControlPublic {
+  id: string;
+  company_id: string | null;
+  code: string;
+  title: string;
+  description: string | null;
+  category: string;
+  enforced: boolean;
+  source: string | null;
+}
+
+export interface SecurityEventPublic {
+  id: string;
+  company_id: string | null;
+  category: string;
+  severity: string;
+  title: string;
+  detail: Record<string, unknown> | null;
+  actor_id: string | null;
+  created_at: string;
+}
+
+export interface SecurityAlertPublic {
+  id: string;
+  company_id: string | null;
+  severity: string;
+  status: string;
+  rule_code: string | null;
+  title: string;
+  description: string | null;
+  created_at: string;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface IncidentCreateInput {
+  company_id?: string | null;
+  severity?: string;
+  title: string;
+  description?: string | null;
+  alert_ids?: string[];
+}
+
+export interface IncidentPublic {
+  id: string;
+  company_id: string | null;
+  severity: string;
+  status: string;
+  title: string;
+  description: string | null;
+  timeline_json: Record<string, unknown> | null;
+  contained_at: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+}
+
+export interface IncidentTransitionInput {
+  to_status: string;
+  note?: string | null;
+}
+
+export interface IncidentActionInput {
+  incident_id: string;
+  action: string;
+  params?: Record<string, unknown> | null;
+}
+
+export interface IncidentActionPublic {
+  id: string;
+  incident_id: string;
+  action_code: string;
+  target_company_id: string | null;
+  target_ref: string | null;
+  state: string;
+  performed_by: string | null;
+  result_json: Record<string, unknown> | null;
+  created_at: string;
+  applied_at: string | null;
+}
+
+/** Incident response enriched with linked alerts and containment actions. */
+export interface IncidentDetailPublic extends IncidentPublic {
+  alerts: SecurityAlertPublic[];
+  actions: IncidentActionPublic[];
+}
+
+export interface AuditEventPublic {
+  id: string;
+  seq: number;
+  company_id: string | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  action: string;
+  category: string | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  outcome: string;
+  detail: Record<string, unknown> | null;
+  policy_result: string | null;
+  approval_ref: string | null;
+  correlation_id: string | null;
+  ip_address: string | null;
+  hash: string;
+  prev_hash: string | null;
+  created_at: string;
+}
+
+export interface AuditChainVerify {
+  verified: boolean;
+  checked: number;
+  first_gap_at_seq: number | null;
+}
+
+export interface DataClassificationPublic {
+  resource_type: string;
+  resource_id: string;
+  classification: string;
+  sensitivity_reason: string | null;
+}
+
+export interface DataClassificationInput {
+  resource_type: string;
+  resource_id: string;
+  classification: string;
+  sensitivity_reason?: string | null;
+}
+
+export interface TransferCheckInput {
+  resource_type: string;
+  resource_id: string;
+  destination: string;
+  payload?: Record<string, unknown> | null;
+  max_outbound?: string | null;
+}
+
+export interface TransferDecisionPublic {
+  allowed: boolean;
+  reason: string;
+  target_classification: string;
+  destination: string | null;
+  requires_approval: boolean;
+  blocked_fields: number;
+}
+
+export interface RetentionPolicyInput {
+  entity_type: string;
+  retention_days: number;
+  deletion_semantics?: string;
+  retention_lock?: boolean;
+}
+
+export interface RetentionPolicyPublic {
+  entity_type: string;
+  company_id: string | null;
+  retention_days: number;
+  deletion_semantics: string;
+  retention_lock: boolean;
+  enabled: boolean;
+}
+
+export interface SystemHealthProbe {
+  status: string;
+  service: string;
+  checks: Record<string, string> | null;
+}
+
+export interface HealthOverview {
+  incidents_open: number;
+  alerts_open: number;
+  audit_events: number;
+  resource_limits: number;
+  resource_usage_entries: number;
+}
+
+export interface MetricsSnapshot {
+  labels: Record<string, string>;
+  values: Record<string, number>;
+  counters: Record<string, number>;
+  recorded_at: string;
+}
+
+export interface SystemHealthRecordPublic {
+  id: string;
+  service: string;
+  component: string;
+  healthy: boolean;
+  detail: Record<string, unknown> | null;
+  latency_ms: number | null;
+  recorded_at: string;
+}

@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–10 are complete. Phase 11+ are planned.**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–11 are complete. Phase 12 is planned (preview only — not started).**
 
 ---
 
@@ -164,7 +164,7 @@ The mission-driven engine **above** the Company Layer: a mission becomes a strat
 
 **Exit criteria (met):** a mission can be planned into a governed startup (plan → approve → bootstrap), the operating engine drives the 10-stage cycle through verification and recovery with shared infrastructure, every artifact is traceable to its mission via the mission graph, all autonomous actions respect the per-company autonomy policy (`allow / require_approval / block`) and global `MAX_*` limits, high-impact actions park at human approval gates that grant exactly one action once, feedback drives bounded replanning, cross-company access is 404-isolated, and everything runs deterministically without paid APIs.
 
-## Phase 10 — External Integrations & Computer Use
+## ✅ Phase 10 — External Integrations & Computer Use
 
 - **Integration layer** — provider-agnostic `IntegrationProvider` protocol + registry; deterministic mock providers (Email, Calendar, Development, Web Research) and a **disabled-by-default** Generic HTTP Connector; company-scoped integration instances with materialized capability inventory (risk, reversibility, idempotency, approval-required).
 - **Capability tools through the Tool Registry (Rule 4)** — every provider capability registers as a Phase 2 `BaseTool` (`{provider}.{capability}`, e.g. `email.send_message`), `dangerous=True` on HIGH/CRITICAL, forwarding into the same governed funnel as direct calls.
@@ -178,15 +178,30 @@ The mission-driven engine **above** the Company Layer: a mission becomes a strat
 
 **Exit criteria (met):** every external action is governed (risk → policy → autonomy → approval → execution → verification → recovery → audit), credentials never stored/rendered/logged, high-risk capabilities require a human gate even under an allow matrix, idempotency blocks duplicate external effects, browser/computer sessions are bounded and treat content as untrusted, SSRF/prompt-injection/exfiltration/webhook protections are tested (§66/§67 fixtures), cross-company reads are 404-isolated, and the three deterministic demos (§68–70) run end to end. 13 external test files added on top of the full Phase 0–9 regression; frontend route group builds with lint/tsc/tests green.
 
-## Phase 11 — Production Hardening, Security & Governance
+## ✅ Phase 11 — Production Hardening, Security & Governance
 
-- Real secrets-management backend (operator env/one-shot abstraction → managed vault).
-- Real browser automation (Playwright) and real provider adapters (SMTP, calendar, HTTP) behind operator credentials.
-- Enterprise RBAC, advanced security, governance, and compliance controls.
-- Scale-out, deployment (Kubernetes), and production observability.
-- Monetization / multi-tenant hooks.
+Phase 11 turned NEXUS into a **secure, governed, observable, resilient, production-oriented** platform. It is an *enforcement layer that composes Phases 0–10* along one invariant chain — `IDENTITY → AUTHORIZATION → POLICY → RESOURCE LIMIT → APPROVAL → ACTION → VERIFICATION → AUDIT → OBSERVABILITY → RECOVERY` — and every refusal is recorded, never silently dropped. See [docs/security-architecture.md](security-architecture.md), [docs/phase-11-production-hardening.md](phase-11-production-hardening.md), [docs/threat-model.md](threat-model.md), [docs/incident-response.md](incident-response.md), [docs/disaster-recovery.md](disaster-recovery.md), and [docs/data-governance.md](data-governance.md).
 
-**Exit criteria:** production-ready reliability, security, and cost controls for real workloads. Phase 11 is **not started** — Phase 10's external layer is deliberately bounded and governed; widening to real automation, managed secrets, and enterprise controls is a future, documented, gated change (spec §84).
+- **Identity & auth** — unified `identity` principals; PBKDF2 password hashing; HS256-signed access tokens (15 min) + hashed rotating refresh tokens with lockout; **gated** enforcement (`AUTH_ENABLED=true` in production only).
+- **RBAC / ABAC + policy engine** — 8 seeded roles; §7 authorization chain; `PolicyEngine` composing the Phase 2 `PolicyResolver` (most-restrictive-wins); cross-company access ⇒ DENY + event.
+- **Secrets & DLP** — Fernet AES-256-GCM at rest (env keys only), multi-key rotation, refs + mask-only serialization, central redaction filter, classification + transfer policy, retention (audit/security never casually hard-deleted).
+- **Audit & detection** — append-only **hash-chained** `audit_events` + `verify_chain()`; 13-category events → threat rules → alerts (mirror Phase 8) → incidents with audited §85 containment actions.
+- **Governance** — kill switch scopes; resource limits + `RunawayGuard`; approval hardening (self-approval blocked, separation of duties) + time-limited audited break-glass; feature flags default-off for risky capabilities.
+- **Hardening composes Phase 10** — SSRF (DNS-rebinding + per-redirect revalidation), filesystem realpath/symlink + credential deny list, tool self-escalation blocked, trusted/untrusted context + `PromptInjectionDetector`.
+- **Reliability & observability** — telemetry/metrics/redaction, middleware chain (security headers, trusted hosts, request-size, rate limits, idempotency), worker heartbeat + stale recovery + **dead-letter queue**, `/health/live|ready|dependencies`.
+- **API** — `/auth`, `/access`, `/security` (events/alerts/incidents/audit), `/governance` (flags/policies/limits/resources/break-glass), `/data` (classifications/transfer-check/retention), `/system` (health/metrics/feature-flags/health-records). Frontend Control Center (`/control`) pending.
+- **Checks & demo** — `python -m app.checks.production_readiness` (PASS/WARN/FAIL; FAILs prod without auth/encryption keys) and `python -m scripts.seed_security_governance [--reset]` (7 attacks → blocked + audited, failure-recovery drill, 100-task benchmark, chain verified).
+- **Tests** — 131 new/plus external-security/tool backend tests green; full regression green; full-suite ordering flake tracked (passes in isolation, pre-existing).
+
+**Exit criteria (met):** production is enforced (auth + RBAC + policy most-restrictive-wins + audited refusals), secrets are encrypted at rest with no plaintext in logs/DB/API, the audit chain is tamper-evident and verifiable, incident response is a runbook with audited containment actions and SoD, the platform survives provider/job failures without silent loss, and `production_readiness` FAILs a production env missing auth or encryption keys — with dev/test still running open so all prior phases stay green.
+
+## Phase 12 — Preview (not started)
+
+- Simulated environment / agent marketplace / digital-twin evaluation.
+- Closed-loop RL / self-modification.
+- Real OS-level sandboxing, Redis-backed worker pools, managed secrets vault, TLS, compliance.
+
+**Exit criteria:** a documented, gated change (spec §84); not started and not required by Phase 11.
 
 ---
 

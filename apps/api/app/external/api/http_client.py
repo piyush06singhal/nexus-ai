@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -18,7 +19,7 @@ from app.core.config import settings
 from app.external.api.circuit_breaker import CircuitBreaker
 from app.external.api.rate_limit import RateLimiter
 from app.external.api.retry import backoff_delay_ms, is_retryable_status_code
-from app.external.api.ssrf import SSRFBlockedError, check_url
+from app.external.api.ssrf import SSRFBlockedError, check_host_resolution, check_url
 from app.external.types import (
     ExternalRateLimitFailure,
     ExternalSystemFailure,
@@ -63,6 +64,7 @@ class SecureHTTPClient:
     ) -> httpx.Response:
         """Perform a governed request, validating every redirect hop."""
         check_url(url)
+        _resolve_and_check(url)
         if not self._breaker.allow_request():
             raise ExternalTransportFailure(
                 f"Circuit {self._breaker.state}: provider temporarily refused"
@@ -89,10 +91,9 @@ class SecureHTTPClient:
                         location = resp.headers.get("location")
                         if not location:
                             break
-                        from urllib.parse import urljoin
-
                         next_url = urljoin(current_url, location)
                         check_url(next_url)  # re-validate the hop (SSRF)
+                        _resolve_and_check(next_url)  # …and re-resolve it (rebinding)
                         auth_parts.append(next_url)
                         current_url = next_url
                         redirects += 1
@@ -144,6 +145,14 @@ class SecureHTTPClient:
             if i < max_attempts:
                 time.sleep(backoff_delay_ms(i) / 1000)
         raise ExternalSystemFailure("Retry budget exhausted")
+
+
+def _resolve_and_check(url: str) -> None:
+    """SSRF-resolve the URL's host right before connecting (DNS-rebinding)."""
+    try:
+        check_host_resolution(urlparse(url).hostname or "")
+    except (AttributeError, TypeError):  # pragma: no cover
+        pass
 
 
 def _send(

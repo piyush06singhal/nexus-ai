@@ -67,6 +67,7 @@ class BrowserSessionManager:
         agent_id: UUID | None = None,
         **owner: Any,
     ) -> BrowserSession:
+        self._governance_guard(company_id)
         active = self._db.scalar(
             sa_select(func.count())
             .select_from(BrowserSession)
@@ -108,6 +109,16 @@ class BrowserSessionManager:
             target_id=session.id,
         )
         return session
+
+    def _governance_guard(self, company_id: UUID) -> None:
+        """Refuse to mint a session while governance pauses the external scope."""
+        from app.db.models.security import SystemFlagScope
+        from app.security.governance import GovernanceGuard
+
+        GovernanceGuard(self._db).require(
+            SystemFlagScope.EXTERNAL.value,
+            tenant_id=company_id,
+        )
 
     def get(self, company_id: UUID, session_id: UUID) -> BrowserSession:
         session = self._db.get(BrowserSession, session_id)

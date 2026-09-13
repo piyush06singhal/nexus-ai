@@ -135,7 +135,14 @@ type BadgeStatus =
   | "rate_limited"
   | "service_unavailable"
   | "invalid_configuration"
-  | "not_configured";
+  | "not_configured"
+  // ── Phase 11: Security, Governance & Production Hardening ──
+  | "investigating"
+  | "contained"
+  | "closed"
+  | "applied"
+  | "reverted"
+  | "cleared";
 
 const COLORS: Record<BadgeStatus, string> = {
   draft: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
@@ -289,6 +296,13 @@ const COLORS: Record<BadgeStatus, string> = {
   service_unavailable: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
   invalid_configuration: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   not_configured: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  // ── Phase 11: Security, Governance & Production Hardening ──
+  investigating: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  contained: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  closed: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  applied: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  reverted: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  cleared: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
 /** Small colored pill that renders a status value with normalized casing. */

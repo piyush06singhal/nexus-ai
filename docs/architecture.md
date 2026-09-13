@@ -1,6 +1,6 @@
 # NEXUS — System Architecture
 
-> **Phase 9 (Autonomous Startup Engine).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration + Verification + Recovery + Evaluation + AI Employee OS + AI Company Layer + Autonomous Startup Engine) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
+> **Phase 11 (Security, Governance & Production Hardening).** This document describes the current architecture (Foundation + Agent Runtime + Tool System + Workflow Orchestration + Memory System + Multi-Agent Orchestration + Verification + Recovery + Evaluation + AI Employee OS + AI Company Layer + Autonomous Startup Engine + External Integration Layer + Security, Governance & Observability) and the design decisions that will shape the system as it grows. Later phases build new components on this foundation; sections marked *future* describe intent, not existing functionality.
 
 ---
 
@@ -105,6 +105,8 @@ FastAPI application with:
 - **Error handling** (`app/core/errors.py`) — typed exception hierarchy rendered as a consistent JSON envelope; no internals leaked to clients.
 - **Logging** (`app/core/logging.py`) — structured, namespaced logging.
 - **Redis** (`app/core/redis.py`) — lazy client; Redis absence never blocks startup. Reserved for future queues/cache.
+- **Security & governance** (`app/security/`, added in Phase 11) — the enforcement layer that *composes* Phases 0–10; see §3.15.
+- **Production readiness** (`app/checks/production_readiness.py`, added in Phase 11) — `python -m app.checks.production_readiness` prints PASS/WARN/FAIL and FAILs a production environment that lacks auth/encryption keys.
 
 ### 3.3 AI Abstraction (`app/api/app/ai/`)
 
@@ -333,6 +335,28 @@ external_actions (immutable journal)  ·  external_events (webhooks)  ·  browse
 - **Frontend** — route group `src/app/(external)/` under an `ExternalShell` context: `/integrations` (dashboard + detail + connections + actions journal + events), `/browser` (+ session detail), `/computer` (+ session detail). Pending external-action gates approve/reject on the Integrations dashboard; `StatusBadge` extended.
 - **Scope guard** — §83 DO-NOT-IMPLEMENT absolute (no unrestricted browser/computer/shell/network, no autonomous finance/trading/legal/hiring/firing/payments/cloud mutation, no CAPTCHA/auth bypass); Phase 11 boundary explicitly not started.
 
+### 3.15 Security, Governance & Observability (Phase 11)
+
+The enforcement layer added in **Phase 11** (see [docs/security-architecture.md](security-architecture.md) for the full design). It is an *additive enforcement* layer — everything composes Phases 0–10; no second execution/memory/company/verification/tool/approval/event system.
+
+```text
+IDENTITY → AUTHORIZATION → POLICY → RESOURCE LIMIT → APPROVAL
+        → ACTION → VERIFICATION → AUDIT → OBSERVABILITY → RECOVERY
+              (every refusal is recorded — never silently dropped)
+```
+
+- **Identity & authentication** (`security/identity.py`, `auth.py`, `tokens.py`, `sessions.py`) — one `identity` table unifies user/service/ai_employee/agent/company principals; PBKDF2 password hashing; HS256-signed access tokens (15 min) + opaque hashed refresh tokens with rotation/revocation/lockout. Enforced by `AuthMiddleware` **only when `auth_enabled=true`** (production), so dev/test suites run open.
+- **RBAC/ABAC + policy engine** (`security/authorization.py`, `policy.py`) — 8 seeded roles; `AuthorizationService.authorize` runs the §7 chain; `PolicyEngine.evaluate` composes the Phase 2 `PolicyResolver` most-restrictive-wins; cross-company intent ⇒ DENY + `CROSS_COMPANY_ACCESS` event.
+- **Secrets & DLP** (`security/secrets.py`, `crypto.py`, `data_protection.py`) — Fernet AES-256-GCM at rest (keys from env), multi-key rotation, refs + mask hints only; data classification (public→secret) + `DataTransferPolicy` composing the Phase 10 exfiltration guard; `RetentionService` (audit/security never casually hard-deleted).
+- **Audit & detection** (`security/accountability.py`, `detection.py`) — append-only **hash-chained** `audit_events` with `verify_chain()`; 13-category `SecurityEventService` → `ThreatDetectionService` rules → `SecurityAlertService` (mirrors Phase 8 `AlertManager`) → `IncidentService` + `IncidentActionExecutor` (§85 audited containment actions).
+- **Governance** (`security/governance.py`, `resources.py`, `approvals.py`, `flags.py`) — kill switch over `system_flags` scopes; `ResourceGovernanceService` + `RunawayGuard` budget frames; approval hardening (self-approval blocked, separation of duties) + time-limited audited break-glass; `FeatureFlagService` (risky capabilities default off).
+- **Hardening composes Phase 10** — SSRF with DNS-rebinding + per-redirect revalidation (enforced in `SecureHTTPClient`), filesystem realpath/symlink + expanded credential deny list, tool self-escalation blocked in `ToolExecutor`, trusted/untrusted context authority + `PromptInjectionDetector`.
+- **Observability & reliability** (`core/telemetry.py`, `core/metrics.py`, `core/redaction.py`, `core/middleware.py`) — request/trace ids, dependency-free metrics registry, central redaction filter, security-headers/trusted-hosts/request-size/rate-limit/idempotency middleware, worker heartbeat + stale recovery + `dead_letter_jobs` DLQ, `/health/live|ready|dependencies` → `system_health_records`, JSON logs.
+- **Database** (migration `0013_security_governance`, additive) — ~30 tables: identity/auth/RBAC, policy, secrets (ciphertext only), audit/security/incident, flags/limits/resources, DLQ/idempotency/health records, classifications/retention, break-glass, context authorities. All new tables follow repo conventions (StrEnum `native_enum=False` VARCHAR, UUID PK, `company_id` FK + index where tenant-scoped).
+- **API** — routers under `/api/v1`: `/auth`, `/access` (users/roles/permissions/secrets refs-only), `/security` (events/alerts/incidents/audit + `verify_chain`), `/governance` (flags/policies/limits/resources/break-glass), `/data` (classifications/transfer-check/retention), `/system` (health/metrics/feature-flags/health-records). Enforced only when `auth_enabled`.
+- **Checks & demo** — `python -m app.checks.production_readiness` (PASS/WARN/FAIL; FAILs prod without `AUTH_ENABLED`/`JWT_SECRET_KEY`/`SECRET_ENCRYPTION_KEY`) and `python -m scripts.seed_security_governance [--reset]` (7 attacks → blocked + audited, failure-recovery drill, 100-task benchmark, chain verified).
+- **Honest scope** — OS-level process sandboxing, Redis-backed workers, managed secrets vault, and TLS termination are documented deployment items (WARN in readiness), not claimed implemented; no compliance certifications are claimed.
+
 ---
 
 ## 4. Communication Boundaries
@@ -497,9 +521,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.10 Permission & Security System
 
-- **Phase:** 6 (AI Company)
-- **Design accommodation:** RBAC model with role hierarchy. Auth middleware pattern. Policy engine for fine-grained access control. The existing `CORS_ORIGINS` config establishes the security config pattern.
-- **Interface points:** `AuthService.authorize()`, `PolicyEngine.evaluate()`, `RBAC` role/permission models.
+- **Phase:** 11 (Security, Governance & Production Hardening) — *built*
+- **Design accommodation:** identity/auth/RBAC/ABAC + policy engine landed in Phase 11 (`app/security/`): one `identity` table, HS256 tokens, 8 seeded roles, `AuthorizationService` §7 chain, `PolicyEngine` composing the Phase 2 `PolicyResolver`, cross-company isolation, secrets at rest (Fernet), append-only hash-chained audit, kill switch, resource/approval/break-glass governance, DLP/retention, and the §3.15 hardening of Phase 10 surfaces.
+- **Interface points:** `AuthorizationService.authorize()` (`security/authorization.py`), `PolicyEngine.evaluate()` (`security/policy.py`), `IdentityManager`/`UserAccountManager`, `SecretManager`/`KeyManager`, `AuditService` + `verify_chain()`, `GovernanceGuard`/`KillSwitchService`, `RunawayGuard`, `PromptInjectionDetector`, and the `/auth`·`/access`·`/governance`·`/data` routers. Production enforcement is gated on `auth_enabled`. OS-level process sandboxing and managed vault/KMS remain documented deployment items.
 
 ### 7.11 Human-in-the-Loop Gates
 
@@ -509,9 +533,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.12 Observability & Telemetry
 
-- **Phase:** 5 (AI Employee OS)
-- **Design accommodation:** Structured logging via `app/core/logging.py` is already in place. Execution tracing will propagate `execution_id` across all operations. The `ModelResponse` already carries `latency_ms` and `usage`.
-- **Interface points:** `execution_id` propagation, structured log fields, metrics export.
+- **Phase:** 11 (Security, Governance & Production Hardening) — *built*
+- **Design accommodation:** Phase 11 added request/trace-id telemetry (`core/telemetry.py`), a dependency-free metrics registry (`core/metrics.py`), a central redaction filter (`core/redaction.py`), JSON structured logging, and the middleware chain (request-id, security headers, trusted hosts, request-size, rate limits, idempotency). Every `AgentExecution`/`ToolCallRecord` still carries latency/cost/usage; `/health/live|ready|dependencies` + `system_health_records` persist probe history.
+- **Interface points:** `core/telemetry.py`, `core/metrics.py`, `core/redaction.py`, `core/middleware.py`, `/system/metrics`, `/system/health/*`; existing `ModelResponse.{latency_ms,usage}`; `execution_id` correlation flows through request/trace ids.
 
 ### 7.13 Evaluation & Benchmarking
 
@@ -569,9 +593,9 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ### 7.22 Cross-Cutting: Config, Secrets, Auth
 
-- **Phase:** 6 (AI Company)
-- **Design accommodation:** `pydantic-settings` config is already the single source of truth. Env-based secrets are the pattern (`.env` files, Docker secrets, cloud secret managers). Auth middleware will wrap FastAPI dependencies.
-- **Interface points:** `Settings` singleton, `SecretsManager.get()`, `AuthMiddleware`.
+- **Phase:** 11 (Security, Governance & Production Hardening) — *built*
+- **Design accommodation:** `pydantic-settings` remains the single source of truth (~60 new Phase 11 settings, documented in `.env.example` and the readiness check). Secrets are Fernet-encrypted at rest (`security/secrets.py` + `crypto.py`) with keys from env only (`SECRET_ENCRYPTION_KEY`, `JWT_SECRET_KEY`); `AuthMiddleware` wraps `/api/v1` when `auth_enabled`; `production_readiness` FAILs production without auth + encryption keys.
+- **Interface points:** `Settings` singleton (`app/core/config.py`), `KeyManager`/`SecretManager`, `AuthMiddleware`/`AuthService`, `python -m app.checks.production_readiness`. External secret managers/KMS remain a documented deployment item.
 
 ---
 
@@ -582,6 +606,6 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 - **Phase 3+ (Workflow Orchestration):** a visual workflow editor, venue triggers/webhook guards, and richer step types (sub-workflow, parallel fan-out — the sequential engine already returns execution state in dependency order).
 - **Memory:** a real embedding provider (OpenAI scaffold is reserved), a native vector index (pgvector) at scale, richer memory types (structured entities/relations), and working/conversation-scope memory management.
 - **Multi-agent orchestration:** a distributed worker + scheduler (currently runs inline/synchronously), an LLM-driven planner/selector behind the existing protocols, richer planning templates, semantic (non-numeric) conflict resolution, and scale-out of the seven-table orchestration model.
-- **Approvals & RBAC:** human-in-the-loop gates for sensitive side effects.
+- **Phase 11+ (Security, Governance & Production Hardening):** real OS-level process sandboxing for tool execution, Redis-backed worker pools, a managed secrets vault (KMS/HashiCorp) behind the `KeyManager` seam, and TLS termination — all documented deployment items, not claimed implemented. No compliance certifications are claimed.
 
 See [roadmap.md](roadmap.md) for the full phased plan.

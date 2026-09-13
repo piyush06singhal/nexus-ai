@@ -101,6 +101,13 @@ class ExternalActionManager:
         capability_row = self._integration.capability(company_id, integration_id, capability)
         payload = payload or {}
 
+        # 0. Governance kill-switch: no external action while the external (or
+        #    global) scope is paused (§61). Composed before every other gate.
+        from app.db.models.security import SystemFlagScope
+        from app.security.governance import GovernanceGuard
+
+        GovernanceGuard(self._db).require(SystemFlagScope.EXTERNAL.value, tenant_id=company_id)
+
         # 0. Company ceiling on journaled actions (§16).
         if self._action_count(company_id) >= settings.max_external_actions:
             raise ExternalActionError(

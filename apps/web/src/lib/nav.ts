@@ -21,6 +21,12 @@ import {
   Wrench,
   Globe,
   MonitorSmartphone,
+  KeyRound,
+  ScrollText,
+  Siren,
+  HeartPulse,
+  UserCog,
+  ShieldAlert,
 } from "lucide-react";
 
 export interface NavItem {
@@ -56,6 +62,14 @@ export const NAV_SECTIONS: NavItem[] = [
   { href: "/integrations/actions", label: "External Actions", description: "The external-action journal — risk, approval, execution, verification, and recovery timeline.", icon: Activity },
   { href: "/browser", label: "Browser Use", description: "Bounded simulated browser sessions with structured untrusted observations and domain policy.", icon: Globe },
   { href: "/computer", label: "Computer Use", description: "Bounded simulated desktop sessions with sensitive purchase-path approval.", icon: MonitorSmartphone },
+  // ── Phase 11: Security, Governance & Production Hardening ──
+  { href: "/control", label: "Control Center", description: "Security posture, governance, audit chain, incidents, and system health.", icon: ShieldCheck },
+  { href: "/control/governance", label: "Governance", description: "Kill switch scopes, resource limits, policies, and break-glass access.", icon: ShieldAlert },
+  { href: "/control/security", label: "Security", description: "Security events and alerts from the Phase 11 detection pipeline.", icon: Siren },
+  { href: "/control/incidents", label: "Incidents", description: "Incident lifecycle with audited containment actions.", icon: ScrollText },
+  { href: "/control/audit", label: "Audit", description: "Append-only hash-chained audit trail with chain verification.", icon: UserCog },
+  { href: "/control/health", label: "Health", description: "Live/readiness/dependency probes, metrics, and health records.", icon: HeartPulse },
+  { href: "/control/access", label: "Access", description: "Users, roles, permissions, and secret references (never values).", icon: KeyRound },
   { href: "/settings", label: "Settings", description: "Workforce, provider, security, and infrastructure configuration.", icon: Settings },
 ];
 

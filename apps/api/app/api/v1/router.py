@@ -42,6 +42,7 @@ from app.api.v1.endpoints import (
     webhooks,
     workflows,
 )
+from app.security.api.router import security_api_router
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -80,3 +81,5 @@ api_router.include_router(browser.router)
 api_router.include_router(computer.router)
 api_router.include_router(external_events.router)
 api_router.include_router(webhooks.router)
+# Phase 11 — Security, Governance & Production Hardening
+api_router.include_router(security_api_router)

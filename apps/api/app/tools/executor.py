@@ -24,6 +24,11 @@ from uuid import UUID
 
 from app.core.logging import get_logger
 from app.db.models.tool_call import ToolCallRecord as ToolCallORM
+from app.security.tool_security import (
+    ToolSecurityError,
+    ToolSecurityPolicy,
+    guard_tool_call,
+)
 from app.tools.permissions import PermissionContext, check_permission
 from app.tools.registry import get_tool
 from app.tools.types import ToolCallRecord, ToolResult, ToolResultStatus
@@ -49,9 +54,13 @@ class ToolExecutor:
         db,
         *,
         timeout_seconds: float | None = None,
+        tool_policy: ToolSecurityPolicy | None = None,
+        context_kind: str = "agent",
     ) -> None:
         self._db = db
         self._default_timeout = timeout_seconds or self.DEFAULT_TIMEOUT
+        self._tool_policy = tool_policy or ToolSecurityPolicy()
+        self._context_kind = context_kind
 
     def execute(
         self,
@@ -118,8 +127,40 @@ class ToolExecutor:
             )
             return record
 
+        # 3.5 Tool-security gate (Phase 11): deny-list, per-tool budget,
+        # context check, and the self-escalation guard — all before execution.
+        try:
+            sandbox, arguments = guard_tool_call(
+                tool_name=tool_name,
+                arguments=validated_args,
+                timeout_seconds=tool_def.timeout_seconds or self._default_timeout,
+                context_kind=self._context_kind,
+                policy=self._tool_policy,
+            )
+        except ToolSecurityError as exc:
+            result = ToolResult(
+                status=ToolResultStatus.DENIED,
+                error=f"Tool security refused: {exc}",
+            )
+            record = self._persist(
+                tool_name=tool_name,
+                arguments=validated_args,
+                result=result,
+                execution_id=execution_id,
+                iteration=iteration,
+            )
+            logger.warning(
+                "tool_security_denied",
+                extra={
+                    "tool": tool_name,
+                    "reason": str(exc),
+                    "execution_id": str(execution_id),
+                },
+            )
+            return record
+
         # 4. Execute with timeout
-        timeout = tool_def.timeout_seconds or self._default_timeout
+        timeout = sandbox.timeout_seconds
         start = time.monotonic()
         try:
             future = _POOL.submit(tool.execute, **validated_args)

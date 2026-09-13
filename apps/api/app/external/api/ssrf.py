@@ -142,6 +142,41 @@ def check_url(url: str) -> None:
     check_host(parsed.hostname, parsed.port)
 
 
+def check_host_resolution(host: str) -> None:
+    """Resolve *host* and refuse it if any address maps to an internal range.
+
+    Closes the DNS-rebinding TOCTOU at the widest practical point: a DNS name
+    that ``check_host`` permits (because the name itself is not an internal
+    address) can still resolve to a private IP at fetch time. By resolving here,
+    immediately before the connect, a ``evil.example`` → ``192.168.0.1`` mapping
+    is refused. This is in-process best effort: fully closing the race requires
+    pinning the connection to the validated address (deployment-level transport
+    item; documented in the threat model).
+    """
+    if not settings.ssrf_protection_enabled:
+        return
+    if _is_ip(host):
+        return  # literal IPs are already checked by check_host
+    import socket
+
+    try:
+        infos = socket.getaddrinfo(host.rstrip("."), None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return  # unresolved now — the connect itself will fail safely
+    for _family, _socktype, _proto, _canon, sockaddr in infos:
+        ip = _extract_ip(sockaddr)
+        if ip is not None and _is_blocked_ip(ip):
+            raise SSRFBlockedError(f"host {host!r} resolves to blocked address {ip!r}")
+
+
+def _extract_ip(sockaddr: tuple) -> str | None:
+    """Pull the address string from a getaddrinfo sockaddr (4-tuple or 2-tuple)."""
+    try:
+        return str(sockaddr[0])
+    except (IndexError, TypeError):
+        return None
+
+
 def validate_redirect_chain(urls: Iterable[str]) -> None:
     """Validate every URL in a redirect chain (each hop re-checked)."""
     for url in urls:

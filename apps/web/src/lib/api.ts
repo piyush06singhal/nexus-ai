@@ -140,6 +140,47 @@ import type {
   ExternalIntegrationPolicy,
   IntegrationCapability,
   IntegrationConnection,
+  // ── Phase 11: Security, Governance & Production Hardening ──
+  AuditChainVerify,
+  AuditEventPublic,
+  AuthSessionResponse,
+  BreakGlassInput,
+  BreakGlassPublic,
+  DataClassificationInput,
+  DataClassificationPublic,
+  FeatureFlagInput,
+  FeatureFlagPublic,
+  GovernanceControlPublic,
+  HealthOverview,
+  IncidentActionInput,
+  IncidentActionPublic,
+  IncidentCreateInput,
+  IncidentDetailPublic,
+  IncidentPublic,
+  IncidentTransitionInput,
+  MetricsSnapshot,
+  PermissionPublic,
+  PolicyDecisionPublic,
+  PolicyRuleInput,
+  PolicyRulePublic,
+  ResourceLimitInput,
+  ResourceLimitPublic,
+  ResourceUsagePublic,
+  RetentionPolicyInput,
+  RetentionPolicyPublic,
+  RolePublic,
+  SecretCreateInput,
+  SecretReference,
+  SecurityAlertPublic,
+  SecurityEventPublic,
+  SessionResult,
+  SystemFlagPublic,
+  SystemHealthProbe,
+  SystemHealthRecordPublic,
+  TransferCheckInput,
+  TransferDecisionPublic,
+  UserCreateInput,
+  UserPublic,
 } from "@/lib/types";
 
 /**
@@ -2252,4 +2293,345 @@ export function fetchComputerObservations(
   return apiFetch<ComputerObservation[]>(
     apiUrl(`/computer/sessions/${companyId}/${sessionId}/observations`),
   );
+}
+
+// ── Phase 11: Security, Governance & Production Hardening ───────────────────
+
+/** apiFetch variant that attaches the stored bearer token when one exists. */
+async function apiFetchAuthorized<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const { getAccessToken } = await import("@/lib/auth");
+  const token = getAccessToken();
+  return apiFetch<T>(path, {
+    ...init,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
+  });
+}
+
+function qs(params: Record<string, string | number | null | undefined>): string {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+  return parts.length > 0 ? `?${parts.join("&")}` : "";
+}
+
+// --- Auth (login is the only token-free call; session requires a token) ---
+
+export function login(input: {
+  email: string;
+  password: string;
+}): Promise<SessionResult> {
+  return apiFetch<SessionResult>(apiUrl("/auth/login"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function logout(refreshToken: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(apiUrl("/auth/logout"), {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+}
+
+export function refreshSession(refreshToken: string): Promise<SessionResult> {
+  return apiFetch<SessionResult>(apiUrl("/auth/refresh"), {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+}
+
+export function fetchAuthSession(): Promise<AuthSessionResponse> {
+  return apiFetchAuthorized<AuthSessionResponse>(apiUrl("/auth/session"));
+}
+
+// --- Access: users, roles, permissions, secrets (refs only) ---
+
+export function fetchAccessUsers(): Promise<UserPublic[]> {
+  return apiFetchAuthorized<UserPublic[]>(apiUrl("/access/users"));
+}
+
+export function createAccessUser(input: UserCreateInput): Promise<UserPublic> {
+  return apiFetchAuthorized<UserPublic>(apiUrl("/access/users"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function assignUserRoles(userId: string, roles: string[]): Promise<UserPublic> {
+  return apiFetchAuthorized<UserPublic>(
+    apiUrl(`/access/users/${userId}/roles`),
+    { method: "POST", body: JSON.stringify({ roles }) },
+  );
+}
+
+export function fetchAccessRoles(): Promise<RolePublic[]> {
+  return apiFetchAuthorized<RolePublic[]>(apiUrl("/access/roles"));
+}
+
+export function fetchAccessPermissions(): Promise<PermissionPublic[]> {
+  return apiFetchAuthorized<PermissionPublic[]>(apiUrl("/access/permissions"));
+}
+
+export function fetchSecrets(): Promise<SecretReference[]> {
+  return apiFetchAuthorized<SecretReference[]>(apiUrl("/access/secrets"));
+}
+
+export function createSecret(input: SecretCreateInput): Promise<SecretReference> {
+  return apiFetchAuthorized<SecretReference>(apiUrl("/access/secrets"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function revokeSecret(secretId: string): Promise<void> {
+  return apiFetchAuthorized<void>(apiUrl(`/access/secrets/${secretId}`), {
+    method: "DELETE",
+  });
+}
+
+// --- Security events, alerts, audit ---
+
+export function fetchSecurityEvents(params: {
+  category?: string | null;
+  companyId?: string | null;
+  limit?: number;
+} = {}): Promise<SecurityEventPublic[]> {
+  return apiFetchAuthorized<SecurityEventPublic[]>(
+    apiUrl(`/security/events${qs({ category: params.category, company_id: params.companyId, limit: params.limit })}`),
+  );
+}
+
+export function fetchSecurityAlerts(params: {
+  companyId?: string | null;
+} = {}): Promise<SecurityAlertPublic[]> {
+  return apiFetchAuthorized<SecurityAlertPublic[]>(
+    apiUrl(`/security/alerts${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function acknowledgeSecurityAlert(
+  alertId: string,
+): Promise<SecurityAlertPublic> {
+  return apiFetchAuthorized<SecurityAlertPublic>(
+    apiUrl(`/security/alerts/${alertId}/acknowledge`),
+    { method: "POST" },
+  );
+}
+
+export function resolveSecurityAlert(
+  alertId: string,
+  resolution?: string,
+): Promise<SecurityAlertPublic> {
+  return apiFetchAuthorized<SecurityAlertPublic>(
+    apiUrl(`/security/alerts/${alertId}/resolve`),
+    {
+      method: "POST",
+      body: JSON.stringify(resolution ? { resolution } : {}),
+    },
+  );
+}
+
+export function fetchAuditEvents(params: {
+  companyId?: string | null;
+  limit?: number;
+} = {}): Promise<AuditEventPublic[]> {
+  return apiFetchAuthorized<AuditEventPublic[]>(
+    apiUrl(`/security/audit${qs({ company_id: params.companyId, limit: params.limit })}`),
+  );
+}
+
+export function verifyAuditChain(): Promise<AuditChainVerify> {
+  return apiFetchAuthorized<AuditChainVerify>(apiUrl("/security/audit/verify"));
+}
+
+// --- Incidents ---
+
+export function fetchIncidents(params: {
+  status?: string | null;
+  companyId?: string | null;
+  limit?: number;
+} = {}): Promise<IncidentPublic[]> {
+  return apiFetchAuthorized<IncidentPublic[]>(
+    apiUrl(`/security/incidents${qs({ status: params.status, company_id: params.companyId, limit: params.limit })}`),
+  );
+}
+
+export function fetchIncident(id: string): Promise<IncidentDetailPublic> {
+  return apiFetchAuthorized<IncidentDetailPublic>(
+    apiUrl(`/security/incidents/${id}`),
+  );
+}
+
+export function createIncident(input: IncidentCreateInput): Promise<IncidentPublic> {
+  return apiFetchAuthorized<IncidentPublic>(apiUrl("/security/incidents"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function transitionIncident(
+  incidentId: string,
+  input: IncidentTransitionInput,
+): Promise<IncidentPublic> {
+  return apiFetchAuthorized<IncidentPublic>(
+    apiUrl(`/security/incidents/${incidentId}/transition`),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function executeIncidentAction(
+  incidentId: string,
+  input: IncidentActionInput,
+): Promise<IncidentActionPublic> {
+  return apiFetchAuthorized<IncidentActionPublic>(
+    apiUrl(`/security/incidents/${incidentId}/actions`),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+// --- Governance: kill switch, policies, limits, resources, break-glass ---
+
+export function fetchSystemFlags(): Promise<SystemFlagPublic[]> {
+  return apiFetchAuthorized<SystemFlagPublic[]>(apiUrl("/governance/flags"));
+}
+
+export function pauseScope(
+  scope: string,
+  reason?: string | null,
+  companyId?: string | null,
+): Promise<SystemFlagPublic> {
+  return apiFetchAuthorized<SystemFlagPublic>(
+    apiUrl(`/governance/flags/${scope}/pause`),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        flag: `${scope}_paused`,
+        reason,
+        tenant_id: companyId ?? undefined,
+      }),
+    },
+  );
+}
+
+export function resumeScope(scope: string): Promise<SystemFlagPublic> {
+  return apiFetchAuthorized<SystemFlagPublic>(
+    apiUrl(`/governance/flags/${scope}/resume`),
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export function fetchPolicyRules(): Promise<PolicyRulePublic[]> {
+  return apiFetchAuthorized<PolicyRulePublic[]>(apiUrl("/governance/policies"));
+}
+
+export function createPolicyRule(input: PolicyRuleInput): Promise<PolicyRulePublic> {
+  return apiFetchAuthorized<PolicyRulePublic>(apiUrl("/governance/policies"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchPolicyDecisions(): Promise<PolicyDecisionPublic[]> {
+  return apiFetchAuthorized<PolicyDecisionPublic[]>(apiUrl("/governance/policy-decisions"));
+}
+
+export function fetchResourceLimits(): Promise<ResourceLimitPublic[]> {
+  return apiFetchAuthorized<ResourceLimitPublic[]>(apiUrl("/governance/limits"));
+}
+
+export function setResourceLimit(input: ResourceLimitInput): Promise<ResourceLimitPublic> {
+  return apiFetchAuthorized<ResourceLimitPublic>(apiUrl("/governance/limits"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchResourceUsage(): Promise<ResourceUsagePublic[]> {
+  return apiFetchAuthorized<ResourceUsagePublic[]>(apiUrl("/governance/resources/usage"));
+}
+
+export function fetchGovernanceControls(): Promise<GovernanceControlPublic[]> {
+  return apiFetchAuthorized<GovernanceControlPublic[]>(apiUrl("/governance/controls"));
+}
+
+export function activateBreakGlass(input: BreakGlassInput): Promise<BreakGlassPublic> {
+  return apiFetchAuthorized<BreakGlassPublic>(apiUrl("/governance/break-glass"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchBreakGlass(): Promise<BreakGlassPublic[]> {
+  return apiFetchAuthorized<BreakGlassPublic[]>(apiUrl("/governance/break-glass"));
+}
+
+// --- Data governance: classification, transfer check, retention ---
+
+export function fetchClassifications(): Promise<DataClassificationPublic[]> {
+  return apiFetchAuthorized<DataClassificationPublic[]>(apiUrl("/data/classifications"));
+}
+
+export function setClassification(input: DataClassificationInput): Promise<DataClassificationPublic> {
+  return apiFetchAuthorized<DataClassificationPublic>(apiUrl("/data/classifications"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function checkTransfer(input: TransferCheckInput): Promise<TransferDecisionPublic> {
+  return apiFetchAuthorized<TransferDecisionPublic>(apiUrl("/data/transfer-check"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchRetentionPolicies(): Promise<RetentionPolicyPublic[]> {
+  return apiFetchAuthorized<RetentionPolicyPublic[]>(apiUrl("/data/retention"));
+}
+
+export function setRetentionPolicy(input: RetentionPolicyInput): Promise<RetentionPolicyPublic> {
+  return apiFetchAuthorized<RetentionPolicyPublic>(apiUrl("/data/retention"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// --- System: health, metrics, feature flags ---
+
+export async function fetchHealthProbe(kind: "live" | "ready" | "dependencies"): Promise<SystemHealthProbe> {
+  return apiFetchAuthorized<SystemHealthProbe>(
+    apiUrl(`/system/health/${kind}`),
+  );
+}
+
+export async function fetchHealthOverview(): Promise<HealthOverview> {
+  return apiFetchAuthorized<HealthOverview>(apiUrl("/system/health/overview"));
+}
+
+export async function fetchMetricSnapshot(): Promise<MetricsSnapshot> {
+  return apiFetchAuthorized<MetricsSnapshot>(apiUrl("/system/metrics"));
+}
+
+export function fetchFeatureFlags(): Promise<FeatureFlagPublic[]> {
+  return apiFetchAuthorized<FeatureFlagPublic[]>(apiUrl("/system/feature-flags"));
+}
+
+export function setFeatureFlag(
+  name: string,
+  input: FeatureFlagInput,
+): Promise<FeatureFlagPublic> {
+  return apiFetchAuthorized<FeatureFlagPublic>(apiUrl("/system/feature-flags"), {
+    method: "POST",
+    body: JSON.stringify({ name, ...input }),
+  });
+}
+
+export function fetchHealthRecords(): Promise<SystemHealthRecordPublic[]> {
+  return apiFetchAuthorized<SystemHealthRecordPublic[]>(apiUrl("/system/health-records"));
 }

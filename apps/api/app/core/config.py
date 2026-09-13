@@ -155,6 +155,114 @@ class Settings(BaseSettings):
         "confidential"  # max data class allowed outward (§64 exfiltration)
     )
 
+    # ── Security, Governance & Production Hardening (Phase 11) ────────────
+    # Authentication & sessions. Auth is gated: middleware enforcement turns on
+    # only when `auth_enabled` is true (production sets it). Dev/test run open.
+    auth_enabled: bool = False
+    # In non-production only, a bootstrap admin user/password can be created
+    # automatically on first startup when no admin exists. Empty ⇒ no bootstrap.
+    auth_dev_bootstrap_email: str = ""
+    auth_dev_bootstrap_password: str = ""
+    auth_dev_bootstrap_if_no_admin: bool = True
+    auth_default_user_company: str = ""  # company name for the bootstrap user, else None
+    access_token_lifetime_minutes: int = 15
+    refresh_token_lifetime_days: int = 7
+    session_idle_timeout_minutes: int = 60
+    session_absolute_timeout_days: int = 30
+    max_failed_login_attempts: int = 5
+    login_lockout_seconds: int = 300
+    secure_auth_cookies: bool = False  # set True behind TLS
+    # HMAC key for signed bearer tokens (HS256). From env only. Empty in
+    # production ⇒ production_readiness FAILs. Test env auto-derives ephemeral.
+    jwt_secret_key: str = ""
+    algorithm_allowed: str = "HS256"
+
+    # Encryption at rest
+    # Secret ciphertext (AES-256-GCM via Fernet) is keyed from this env var.
+    secret_encryption_key: str = ""
+
+    # API security surface
+    trusted_hosts: list[str] = Field(
+        default_factory=lambda: ["localhost", "127.0.0.1", "testserver"]
+    )
+    allowed_hosts: list[str] = Field(
+        default_factory=lambda: []  # empty ⇒ trusted_hosts governs
+    )
+    # Response security headers applied by middleware (name=value pairs appended
+    # unless the server already sent them).
+    security_headers: dict[str, str] = Field(
+        default_factory=lambda: {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "no-referrer",
+            "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        }
+    )
+    max_request_body_bytes: int = 2_000_000  # 2 MiB default body cap
+    # Rate limiting (sliding window in-memory; DB-backed rate_limit_records too).
+    rate_limit_enabled: bool = False
+    rate_limit_default_per_minute: int = 600
+    rate_limit_auth_per_minute: int = 20  # stricter for /auth/* (lockout protection)
+    rate_limit_external_per_minute: int = 120
+    rate_limit_expensive_per_minute: int = 30  # orchestrations, benchmarks, exports
+
+    # Governance: resource limits & runaway guard
+    resource_max_iterations_default: int = 100
+    resource_max_duration_seconds_default: int = 3600
+    resource_max_tokens_default: int = 500_000
+    resource_max_cost_default: float = 500.0
+    resource_max_tool_calls_default: int = 500
+    # Per-category budget ceilings (USD) defaults; companies may lower them.
+    resource_default_budget_keys: list[str] = Field(
+        default_factory=lambda: [
+            "tokens",
+            "cost",
+            "tool_calls",
+            "iterations",
+            "duration_seconds",
+        ]
+    )
+
+    # Feature flags — risky capabilities default OFF (§8 safe defaults).
+    feature_flags_enabled: bool = True
+    feature_self_serve_signup_enabled: bool = False
+    feature_profile_import_enabled: bool = False
+    feature_browser_cloud_export_enabled: bool = False
+    feature_external_autonomous_send_enabled: bool = False
+    feature_data_export_enabled: bool = False
+    feature_code_execution_enabled: bool = False
+
+    # Kill switch — an operator/reporting-level global pause for agent autonomy.
+    # Individual scopes (company/employee/agent/external) are set per row.
+    kill_switch_global_pause: bool = False  # start everything paused if True
+
+    # Retention window (days) for routine observability data. Audit/security
+    # events are append-only and never auto-deleted by default.
+    retention_execution_days: int = 180
+    retention_logs_days: int = 180
+    retention_security_events_days: int = 0  # 0 ⇒ never auto-delete
+    retention_memory_days: int = 730
+
+    # Observability
+    logging_json: bool = False  # structured JSON logs when True
+    tls_enabled: bool = False  # deployment flag: TLS terminated upstream normally
+    metrics_enabled: bool = True
+
+    # Reliability (compose Phase 5/6/10)
+    worker_heartbeat_interval_seconds: int = 5
+    worker_stale_threshold_seconds: int = 120
+    worker_max_retries: int = 3
+    worker_retry_backoff_seconds: float = 2.0
+    idempotency_enabled: bool = True  # Idempotency-Key header → idempotency_keys
+    dlq_enabled: bool = True
+
+    # Approval governance (compose Phase 9 ApprovalGateManager)
+    approval_require_separation_of_duties: bool = True  # requester ≠ approver
+    approval_self_approval_blocked: bool = True
+    approval_max_pending_per_company: int = 200
+    break_glass_default_max_minutes: int = 30
+    admin_action_require_approval: bool = False  # sensitive admin ops gate when True
+
     # Pydantic settings behaviour
     model_config = SettingsConfigDict(
         env_file=".env",

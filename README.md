@@ -8,7 +8,7 @@ NEXUS lets you hand a high-level business objective to a system of AI agents tha
 2. **AI Employee OS** — a runtime for individual AI workers with memory, tools, and supervision.
 3. **Autonomous Startup / Business Engine** — continuously drives a business mission end to end.
 
-> **Status: Phase 10 (External Integrations & Computer Use).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform. Phase 8 adds the **AI Company Layer**: companies, departments, org chart, company goals, KPIs (computed from authoritative data), budgets (company→department hierarchy), policies (most-restrictive-wins resolution), decisions (with audit-trail review), risks, alerts, company health scoring, analytics, and reporting — the organizational layer above the Employee OS. Phase 9 adds the **Autonomous Startup Engine**: missions, strategic & startup planning, company bootstrap, controlled workforce provisioning, products/projects, governed operating cycles, feedback & replanning, human approval gates, a mission traceability graph, and bounded-autonomy governance — the engine that *drives* a business mission end to end. Phase 10 adds **External Integrations & Computer Use**: a governed external layer — integrations with capabilities that register as Permission-gated tools, an immutable external-action journal with risk → policy → approval → execution → verification → recovery → audit, reference-only credentials (no secrets at rest), bounded simulated browser and computer sessions with untrusted-observation labeling, SSRF/prompt-injection/data-exfiltration/webhook security, cross-company 404 isolation — the layer that lets NEXUS touch the outside world *safely*.
+> **Status: Phase 11 (Security, Governance & Production Hardening).** Phase 0 gave us a clean, runnable foundation. Phase 1 ships the **Agent Runtime** with typed execution. Phase 2 adds the **Tool & Action System**: a permission-gated tool registry, four built-in tools, a tool-calling loop in the runtime, persistence of every tool invocation, and a Tools page in the UI. Phase 3 adds **Workflow Orchestration**: multi-step workflows (agent tasks, tool actions, conditions, delays) with structured data flow, condition branching, retry/timeout, schedule/event/webhook triggers, and a DB-backed worker + scheduler that survives restarts. Phase 4 adds the **Memory System**: persistent, provider-independent agent memory — 5 memory types, namespace isolation, hybrid retrieval (semantic + keyword + recency + importance), auto-extraction from completed executions, and injection of relevant memories into the agent's context. Phase 5 adds **Multi-Agent Orchestration**: multiple specialized agents coordinate on a shared objective — a deterministic planner decomposes the goal into tasks, a capability-based selector assembles a team, an orchestrator runs them in parallel + dependency order over an authorized message bus, and a synthesizer aggregates everything with conflict detection and source attribution. Phase 6 adds **Verification, Recovery & Evaluation**: a shared verification layer determines correctness, a bounded self-healing recovery engine fixes safe failures and escalates the rest, and an evaluation framework measures performance. Phase 7 adds **AI Employee OS**: persistent AI employees with identity, skills, goals, workload management, assignment engine, performance tracking, templates, and audit logging — transforming NEXUS into an AI workforce platform. Phase 8 adds the **AI Company Layer**: companies, departments, org chart, company goals, KPIs (computed from authoritative data), budgets (company→department hierarchy), policies (most-restrictive-wins resolution), decisions (with audit-trail review), risks, alerts, company health scoring, analytics, and reporting — the organizational layer above the Employee OS. Phase 9 adds the **Autonomous Startup Engine**: missions, strategic & startup planning, company bootstrap, controlled workforce provisioning, products/projects, governed operating cycles, feedback & replanning, human approval gates, a mission traceability graph, and bounded-autonomy governance — the engine that *drives* a business mission end to end. Phase 10 adds **External Integrations & Computer Use**: a governed external layer — integrations with capabilities that register as Permission-gated tools, an immutable external-action journal with risk → policy → approval → execution → verification → recovery → audit, reference-only credentials (no secrets at rest), bounded simulated browser and computer sessions with untrusted-observation labeling, SSRF/prompt-injection/data-exfiltration/webhook security, cross-company 404 isolation — the layer that lets NEXUS touch the outside world *safely*. Phase 11 adds **Security, Governance & Production Hardening**: an enforcement layer that composes Phases 0–10 — Fernet AES-256-GCM secrets, HS256 auth + RBAC/ABAC + policy engine, append-only hash-chained audit, 13-category detection → alerts → incidents with audited containment, kill switch, resource/approval/break-glass governance, SSRF/filesystem/tool/context hardening, observability & reliability (telemetry, metrics, redaction, middleware, DLQ, health probes), and a production-readiness gate.
 
 ---
 
@@ -401,6 +401,31 @@ cd apps/api
 
 ---
 
+## Phase 11 — Security, Governance & Production Hardening
+
+NEXUS is now **secure by default and governed**, without a second execution/memory/company/system. Phase 11 is an *enforcement layer* that composes Phases 0–10 along one invariant chain — `IDENTITY → AUTHORIZATION → POLICY → RESOURCE LIMIT → APPROVAL → ACTION → VERIFICATION → AUDIT → OBSERVABILITY → RECOVERY` — and every refusal is **recorded**, never silently dropped.
+
+- **Identity & auth** — one `identity` table unifies users/services/employees/agents/companies; PBKDF2 password hashing; HS256-signed access tokens (15 min) + hashed rotating refresh tokens; login lockout. Auth is **gated**: enforced only in production (`AUTH_ENABLED=true`), so dev/test run open and the full Phase 0–10 suite stays green.
+- **RBAC / ABAC + policy engine** — 8 seeded roles; `AuthorizationService` runs the §7 chain (active → company isolation → role → permission → policy, most-restrictive-wins, composing the Phase 2 `PolicyResolver`). Cross-company access ⇒ DENY + `CROSS_COMPANY_ACCESS` event.
+- **Secrets & DLP** — Fernet AES-256-GCM at rest (keys from env only), multi-key rotation, refs + mask-only serialization, central redaction filter, data classification (public→secret) + transfer policy composing the Phase 10 exfiltration guard.
+- **Audit & detection** — append-only **hash-chained** `audit_events` (never casually hard-deleted, `verify_chain()` proves integrity); 13-category security events → configurable threat rules → alerts (mirroring Phase 8) → incidents with **audited** §85 containment actions.
+- **Governance** — kill switch (GLOBAL/COMPANY/EMPLOYEE/AGENT/EXTERNAL/WORKFLOW scopes), resource limits + `RunawayGuard` budget frames, approval hardening (self-approval blocked, separation of duties) + time-limited audited **break-glass**.
+- **Hardening composes Phase 10** — SSRF with DNS-rebinding + per-redirect revalidation, filesystem realpath/symlink + credential deny list, tool self-escalation blocked in the executor, trusted/untrusted context + `PromptInjectionDetector`.
+- **Reliability & observability** — telemetry/request-id, dependency-free metrics, central redaction, security-headers/trusted-hosts/request-size/rate-limit/idempotency middleware, worker heartbeat + stale recovery + **dead-letter queue**, `/health/live|ready|dependencies`, JSON logs.
+- **Checks & demo** — `python -m app.checks.production_readiness` (PASS/WARN/FAIL; FAILs production without auth/encryption keys) and the deterministic Security & Governance demo (7 attacks → blocked + audited, failure-recovery drill, 100-task benchmark).
+
+Open the **Control Center** in the sidebar (`/control`) when Wave I lands to inspect posture, governance, security events, audit chain, incidents, and health. Secret values are never rendered.
+
+See [docs/security-architecture.md](docs/security-architecture.md) for the design, [docs/threat-model.md](docs/threat-model.md) for the threat lens, [docs/incident-response.md](docs/incident-response.md) and [docs/disaster-recovery.md](docs/disaster-recovery.md) for ops runbooks, and [docs/data-governance.md](docs/data-governance.md) for the data side. The demo:
+
+```bash
+cd apps/api
+DATABASE_URL="sqlite:////tmp/nexus_secdemo.db" \
+  .venv/bin/python -m scripts.seed_security_governance [--reset]   # 7 attacks blocked + audited, chain verified
+```
+
+---
+
 ## Quick Start
 
 The fastest way to see the whole stack running is Docker Compose:
@@ -568,6 +593,14 @@ All configuration flows through environment variables — **no secrets or hardco
 | `EMPLOYEE_EVALUATION_ON_TASK_COMPLETE` | Auto-evaluate employee on task completion | `false` |
 | `EMPLOYEE_CONTEXT_MAX_TOKENS` | Max tokens in employee context | `4000` |
 | `EMPLOYEE_AUDIT_ENABLED` | Enable employee audit logging | `true` |
+| `AUTH_ENABLED` | Enforce authentication + RBAC on all `/api/v1` routes (**true in production**) | `false` |
+| `JWT_SECRET_KEY` | HMAC-SHA256 signing key for access tokens (required by `production_readiness` in prod) | *(empty)* |
+| `SECRET_ENCRYPTION_KEY` | Fernet (AES-256-GCM) at-rest encryption key (required by `production_readiness` in prod) | *(empty)* |
+| `SECURE_AUTH_COOKIES` | Set secure/samesite cookies (turn on behind TLS) | `false` |
+| `TRUSTED_HOSTS` | Host-header allow-list for the trusted-hosts middleware | `[]` |
+| `RATE_LIMIT_ENABLED` | Sliding-window in-process rate limiting (default/auth/external/expensive) | `false` |
+| `LOGGING_JSON` | Structured JSON log output | `false` |
+| `DLQ_ENABLED` | Dead-letter queue for failed worker/job executions (never silent loss) | `true` |
 
 AI provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) are reserved for later phases and are not required now.
 
@@ -592,6 +625,12 @@ The Next.js app proxies `/api/*` to the backend through a **runtime** catch-all 
 - [AI Company Layer](docs/company-os.md) — the Phase 8 reference (companies, departments, org chart, goals, KPIs, budgets, policies, decisions, risks, alerts, health, reports, analytics, API).
 - [Autonomous Startup Engine](docs/phase-9-autonomous-startup.md) — the Phase 9 reference (missions, startup planning & bootstrap, operating cycles, autonomy & approval gates, feedback & replanning, observation, mission graph, API).
 - [External Integrations & Computer Use](docs/phase-10-external-integrations.md) — the Phase 10 reference (integration layer, capability tools, the external-action funnel, reference-only credentials, browser/computer safety models, security, demo).
+- [Security & Governance Architecture](docs/security-architecture.md) — the Phase 11 design (identity/auth/RBAC, policy, secrets & DLP, audit & detection, governance, observability, hardened Phase 10 surfaces, API map, deployment items).
+- [Phase 11 Production Hardening](docs/phase-11-production-hardening.md) — what Phase 11 delivered wave by wave, configuration, and how to verify it.
+- [Threat Model](docs/threat-model.md) — assets → threats → Phase 11 controls → verification (STRIDE-flavored, T1–T12).
+- [Incident Response](docs/incident-response.md) — the Phase 11 incident runbook (lifecycle, SoD roles, audited containment actions, 7 scenarios, escalation rules, demo drill).
+- [Disaster Recovery](docs/disaster-recovery.md) — backup/restore, RPO/RTO, failure modes, and the immutable-audit recovery drill.
+- [Data Governance](docs/data-governance.md) — classification, secrets-at-rest, retention, transfer policy, and the audit account.
 - [Roadmap](docs/roadmap.md) — the phased plan from foundation to autonomous business engine.
 
 ---

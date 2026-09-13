@@ -62,6 +62,11 @@ class ComputerSessionManager:
         agent_id: UUID | None = None,
         **owner: Any,
     ) -> ComputerSession:
+        # Governance gate: no session minting while external scope is paused.
+        from app.db.models.security import SystemFlagScope
+        from app.security.governance import GovernanceGuard
+
+        GovernanceGuard(self._db).require(SystemFlagScope.EXTERNAL.value, tenant_id=company_id)
         active = self._db.scalar(
             sa_select(func.count())
             .select_from(ComputerSession)

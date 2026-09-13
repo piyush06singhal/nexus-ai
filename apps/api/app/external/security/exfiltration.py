@@ -122,7 +122,7 @@ def guard_payload(
         if key in allowlist:
             output[key] = value
             continue
-        klass = classify_data(value)
+        klass = _classify_field(key, value)
         if allowed_levels.index(klass) <= permitted_rank:
             output[key] = redact_outbound(value) if klass in {"restricted", "secret"} else value
         else:
@@ -141,6 +141,22 @@ def guard_payload(
 def _classify_scalar(value: Any) -> DataClassification:
     # Non-dict structural data is treated as business/internal data.
     return DataClassification.INTERNAL
+
+
+def _classify_field(key: str, value: Any) -> DataClassification:
+    """Classify one outbound field, honoring the *field name* in addition to
+    the value. The name itself is a strong sensitivity signal: a bare string
+    ``"4111-1111-1111-1111"`` under the key ``card_number`` would otherwise
+    classify as INTERNAL and sail past the guard. Key signals win, then the
+    value is classified as before."""
+    lowered = key.lower()
+    for field in _CREDENTIAL_FIELDS:
+        if field in lowered:
+            return DataClassification.SECRET
+    for field in _FINANCIAL_FIELDS:
+        if field in lowered:
+            return DataClassification.RESTRICTED
+    return classify_data(value)
 
 
 _HIGH_ENTROPY_THRESHOLD = re.compile(r"[A-Za-z0-9_\-\.\/+=]{40,}")

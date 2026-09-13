@@ -3,6 +3,7 @@
 # the newest package versions ship cp314 wheels. See docs/architecture.md
 # for the dependency-pinning discussion.
 fastapi>=0.115
+cryptography>=43
 uvicorn[standard]>=0.34
 pydantic>=2.13
 pydantic-settings>=2.7

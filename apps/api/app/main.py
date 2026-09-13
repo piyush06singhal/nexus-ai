@@ -74,6 +74,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Phase 11 — observability + API-security chain (each piece self-gated).
+    from app.core.middleware import install_security_middleware
+
+    install_security_middleware(app)
+
+    # Phase 11 — bearer-token gate (inert when auth_enabled=False).
+    from app.security.api.middleware import AuthMiddleware
+
+    app.add_middleware(AuthMiddleware)
+
     register_exception_handlers(app)
 
     # API versioning: mount v1 under its prefix. Future versions are additive.
