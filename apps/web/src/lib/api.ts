@@ -176,6 +176,42 @@ import type {
   SessionResult,
   SystemFlagPublic,
   SystemHealthProbe,
+  AgentBenchmarkScorePublic,
+  AgentPackageCreate,
+  AgentPackagePublic,
+  AgentPackageVersionPublic,
+  AgentRecommendationPublic,
+  BenchmarkCreate,
+  BenchmarkPublic,
+  BenchmarkResultsPublic,
+  BenchmarkRunPublic,
+  ExperimentCreate,
+  ExperimentPublic,
+  ExperimentResultPublic,
+  InstallRequest,
+  InstallationPublic,
+  OptimizationResultsPublic,
+  OptimizationCyclePublic,
+  OptimizationCycleCreate,
+  OptimizationProblemCreate,
+  OptimizationProblemPublic,
+  OptimizationRunPublic,
+  PackageVersionInput,
+  RecommendationPublic,
+  RecommendationReject,
+  ScenarioCreate,
+  ScenarioPublic,
+  SimulationCreate,
+  SimulationComparisonPublic,
+  SimulationEventPublic,
+  SimulationMetricsPublic,
+  SimulationPublic,
+  SimulationResultsPublic,
+  SimulationRunCreate,
+  SimulationRunPublic,
+  SimulationSnapshotPublic,
+  SimulationStatePublic,
+  SimulationUpdate,
   SystemHealthRecordPublic,
   TransferCheckInput,
   TransferDecisionPublic,
@@ -2634,4 +2670,501 @@ export function setFeatureFlag(
 
 export function fetchHealthRecords(): Promise<SystemHealthRecordPublic[]> {
   return apiFetchAuthorized<SystemHealthRecordPublic[]>(apiUrl("/system/health-records"));
+}
+
+// ── Phase 12: Simulation ─────────────────────────────────────────────────────
+
+export function fetchSimulations(params: {
+  companyId?: string;
+}): Promise<SimulationPublic[]> {
+  return apiFetchAuthorized<SimulationPublic[]>(
+    apiUrl(`/simulations${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function createSimulation(input: SimulationCreate): Promise<SimulationPublic> {
+  return apiFetchAuthorized<SimulationPublic>(apiUrl("/simulations"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchSimulation(id: string): Promise<SimulationPublic> {
+  return apiFetchAuthorized<SimulationPublic>(apiUrl(`/simulations/${id}`));
+}
+
+export function updateSimulation(
+  id: string,
+  input: SimulationUpdate,
+): Promise<SimulationPublic> {
+  return apiFetchAuthorized<SimulationPublic>(apiUrl(`/simulations/${id}`), {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function runSimulation(
+  id: string,
+  input?: SimulationRunCreate,
+): Promise<SimulationRunPublic> {
+  return apiFetchAuthorized<SimulationRunPublic>(apiUrl(`/simulations/${id}/run`), {
+    method: "POST",
+    body: JSON.stringify(input ?? {}),
+  });
+}
+
+export function fetchSimulationRun(runId: string): Promise<SimulationRunPublic> {
+  return apiFetchAuthorized<SimulationRunPublic>(apiUrl(`/simulations/runs/${runId}`));
+}
+
+export function pauseSimulationRun(runId: string): Promise<SimulationRunPublic> {
+  return apiFetchAuthorized<SimulationRunPublic>(apiUrl(`/simulations/runs/${runId}/pause`), {
+    method: "POST",
+  });
+}
+
+export function cancelSimulationRun(runId: string): Promise<SimulationRunPublic> {
+  return apiFetchAuthorized<SimulationRunPublic>(apiUrl(`/simulations/runs/${runId}/cancel`), {
+    method: "POST",
+  });
+}
+
+export function fetchSimulationState(runId: string): Promise<SimulationStatePublic> {
+  return apiFetchAuthorized<SimulationStatePublic>(apiUrl(`/simulations/runs/${runId}/state`));
+}
+
+export function fetchSimulationEvents(runId: string): Promise<SimulationEventPublic[]> {
+  return apiFetchAuthorized<SimulationEventPublic[]>(
+    apiUrl(`/simulations/runs/${runId}/events`),
+  );
+}
+
+export function fetchSimulationMetrics(runId: string): Promise<SimulationMetricsPublic> {
+  return apiFetchAuthorized<SimulationMetricsPublic>(apiUrl(`/simulations/runs/${runId}/metrics`));
+}
+
+export function fetchSimulationResults(runId: string): Promise<SimulationResultsPublic> {
+  return apiFetchAuthorized<SimulationResultsPublic>(
+    apiUrl(`/simulations/runs/${runId}/results`),
+  );
+}
+
+export function fetchScenarios(params: {
+  simulationId?: string;
+  companyId?: string;
+}): Promise<ScenarioPublic[]> {
+  return apiFetchAuthorized<ScenarioPublic[]>(
+    apiUrl(`/simulations/scenarios${qs({ simulation_id: params.simulationId, company_id: params.companyId })}`),
+  );
+}
+
+export function createScenario(input: ScenarioCreate): Promise<ScenarioPublic> {
+  return apiFetchAuthorized<ScenarioPublic>(apiUrl("/simulations/scenarios"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchScenario(id: string): Promise<ScenarioPublic> {
+  return apiFetchAuthorized<ScenarioPublic>(apiUrl(`/simulations/scenarios/${id}`));
+}
+
+export function runScenario(
+  id: string,
+  input?: SimulationRunCreate,
+): Promise<SimulationRunPublic> {
+  return apiFetchAuthorized<SimulationRunPublic>(apiUrl(`/simulations/scenarios/${id}/run`), {
+    method: "POST",
+    body: JSON.stringify(input ?? {}),
+  });
+}
+
+export function compareRuns(input: {
+  baseline_run_id: string;
+  scenario_run_id: string;
+}): Promise<SimulationComparisonPublic> {
+  return apiFetchAuthorized<SimulationComparisonPublic>(apiUrl("/simulations/compare/runs"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchTwinSnapshots(params: {
+  companyId?: string;
+}): Promise<SimulationSnapshotPublic[]> {
+  return apiFetchAuthorized<SimulationSnapshotPublic[]>(
+    apiUrl(`/simulations/twin${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function snapshotTwin(input: {
+  company_id?: string;
+}): Promise<SimulationSnapshotPublic> {
+  return apiFetchAuthorized<SimulationSnapshotPublic>(apiUrl("/simulations/twin"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// ── Phase 12: Optimization ───────────────────────────────────────────────────
+
+export function fetchOptimizationProblems(params: {
+  companyId?: string;
+}): Promise<OptimizationProblemPublic[]> {
+  return apiFetchAuthorized<OptimizationProblemPublic[]>(
+    apiUrl(`/optimization/problems${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function createOptimizationProblem(
+  input: OptimizationProblemCreate,
+): Promise<OptimizationProblemPublic> {
+  return apiFetchAuthorized<OptimizationProblemPublic>(apiUrl("/optimization/problems"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchOptimizationProblem(id: string): Promise<OptimizationProblemPublic> {
+  return apiFetchAuthorized<OptimizationProblemPublic>(apiUrl(`/optimization/problems/${id}`));
+}
+
+export function runOptimizationProblem(id: string): Promise<OptimizationRunPublic> {
+  return apiFetchAuthorized<OptimizationRunPublic>(
+    apiUrl(`/optimization/problems/${id}/run`),
+    { method: "POST" },
+  );
+}
+
+export function fetchOptimizationRun(runId: string): Promise<OptimizationRunPublic> {
+  return apiFetchAuthorized<OptimizationRunPublic>(apiUrl(`/optimization/runs/${runId}`));
+}
+
+export function fetchOptimizationResults(runId: string): Promise<OptimizationResultsPublic> {
+  return apiFetchAuthorized<OptimizationResultsPublic>(
+    apiUrl(`/optimization/runs/${runId}/results`),
+  );
+}
+
+export function fetchRecommendations(params: {
+  companyId?: string;
+}): Promise<RecommendationPublic[]> {
+  return apiFetchAuthorized<RecommendationPublic[]>(
+    apiUrl(`/optimization/recommendations${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function recommendFromRun(runId: string): Promise<RecommendationPublic> {
+  return apiFetchAuthorized<RecommendationPublic>(
+    apiUrl(`/optimization/runs/${runId}/recommend`),
+    { method: "POST" },
+  );
+}
+
+export function fetchRecommendation(id: string): Promise<RecommendationPublic> {
+  return apiFetchAuthorized<RecommendationPublic>(apiUrl(`/optimization/recommendations/${id}`));
+}
+
+export function approveRecommendation(id: string): Promise<RecommendationPublic> {
+  return apiFetchAuthorized<RecommendationPublic>(
+    apiUrl(`/optimization/recommendations/${id}/approve`),
+    { method: "POST" },
+  );
+}
+
+export function rejectRecommendation(
+  id: string,
+  input: RecommendationReject,
+): Promise<RecommendationPublic> {
+  return apiFetchAuthorized<RecommendationPublic>(
+    apiUrl(`/optimization/recommendations/${id}/reject`),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+// ── Phase 12: Experiments ────────────────────────────────────────────────────
+
+export function fetchExperiments(params: {
+  companyId?: string;
+}): Promise<ExperimentPublic[]> {
+  return apiFetchAuthorized<ExperimentPublic[]>(
+    apiUrl(`/experiments${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function createExperiment(input: ExperimentCreate): Promise<ExperimentPublic> {
+  return apiFetchAuthorized<ExperimentPublic>(apiUrl("/experiments"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchExperiment(id: string): Promise<ExperimentPublic> {
+  return apiFetchAuthorized<ExperimentPublic>(apiUrl(`/experiments/${id}`));
+}
+
+export function submitExperiment(id: string): Promise<ExperimentPublic> {
+  return apiFetchAuthorized<ExperimentPublic>(apiUrl(`/experiments/${id}/submit`), {
+    method: "POST",
+  });
+}
+
+export function approveExperiment(id: string): Promise<ExperimentPublic> {
+  return apiFetchAuthorized<ExperimentPublic>(apiUrl(`/experiments/${id}/approve`), {
+    method: "POST",
+  });
+}
+
+export function runExperiment(id: string): Promise<ExperimentPublic> {
+  return apiFetchAuthorized<ExperimentPublic>(apiUrl(`/experiments/${id}/run`), {
+    method: "POST",
+  });
+}
+
+export function stopExperiment(id: string): Promise<ExperimentPublic> {
+  return apiFetchAuthorized<ExperimentPublic>(apiUrl(`/experiments/${id}/stop`), {
+    method: "POST",
+  });
+}
+
+export function completeExperiment(
+  id: string,
+  input: {
+    conclusion?: string;
+    winning_variant_id?: string | null;
+    metrics?: Record<string, unknown> | null;
+    confidence?: Record<string, unknown> | null;
+    assumptions?: Record<string, unknown> | null;
+    limitations?: Record<string, unknown> | null;
+  },
+): Promise<ExperimentResultPublic> {
+  return apiFetchAuthorized<ExperimentResultPublic>(apiUrl(`/experiments/${id}/complete`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchExperimentResults(id: string): Promise<ExperimentResultPublic[]> {
+  return apiFetchAuthorized<ExperimentResultPublic[]>(apiUrl(`/experiments/${id}/results`));
+}
+
+// ── Phase 12: Benchmarks ─────────────────────────────────────────────────────
+
+export function fetchBenchmarks(params: {
+  companyId?: string;
+}): Promise<BenchmarkPublic[]> {
+  return apiFetchAuthorized<BenchmarkPublic[]>(
+    apiUrl(`/benchmarks${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function createBenchmark(input: BenchmarkCreate): Promise<BenchmarkPublic> {
+  return apiFetchAuthorized<BenchmarkPublic>(apiUrl("/benchmarks"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchBenchmark(id: string): Promise<BenchmarkPublic> {
+  return apiFetchAuthorized<BenchmarkPublic>(apiUrl(`/benchmarks/${id}`));
+}
+
+export function runBenchmark(id: string): Promise<BenchmarkRunPublic> {
+  return apiFetchAuthorized<BenchmarkRunPublic>(apiUrl(`/benchmarks/${id}/run`), {
+    method: "POST",
+  });
+}
+
+export function fetchBenchmarkRun(runId: string): Promise<BenchmarkRunPublic> {
+  return apiFetchAuthorized<BenchmarkRunPublic>(apiUrl(`/benchmarks/runs/${runId}`));
+}
+
+export function fetchBenchmarkRunResults(runId: string): Promise<BenchmarkResultsPublic> {
+  return apiFetchAuthorized<BenchmarkResultsPublic>(
+    apiUrl(`/benchmarks/runs/${runId}/results`),
+  );
+}
+
+export function fetchAgentBenchmarkScores(
+  agentId: string,
+  params: { benchmarkId?: string } = {},
+): Promise<AgentBenchmarkScorePublic[]> {
+  return apiFetchAuthorized<AgentBenchmarkScorePublic[]>(
+    apiUrl(`/benchmarks/agents/${agentId}/scores${qs({ benchmark_id: params.benchmarkId })}`),
+  );
+}
+
+// ── Phase 12: Agent Marketplace ──────────────────────────────────────────────
+
+export function scanMarketplace(): Promise<Record<string, unknown>> {
+  return apiFetchAuthorized<Record<string, unknown>>(apiUrl("/marketplace/scan"), {
+    method: "POST",
+  });
+}
+
+export function fetchAgentPackages(params: {
+  companyId?: string;
+}): Promise<AgentPackagePublic[]> {
+  return apiFetchAuthorized<AgentPackagePublic[]>(
+    apiUrl(`/marketplace/agents${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function createAgentPackage(input: AgentPackageCreate): Promise<AgentPackagePublic> {
+  return apiFetchAuthorized<AgentPackagePublic>(apiUrl("/marketplace/agents"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchAgentPackage(id: string): Promise<AgentPackagePublic> {
+  return apiFetchAuthorized<AgentPackagePublic>(apiUrl(`/marketplace/agents/${id}`));
+}
+
+export function updateAgentPackage(
+  id: string,
+  input: Partial<AgentPackageCreate>,
+): Promise<AgentPackagePublic> {
+  return apiFetchAuthorized<AgentPackagePublic>(apiUrl(`/marketplace/agents/${id}`), {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function addPackageVersion(
+  id: string,
+  input: PackageVersionInput,
+): Promise<AgentPackageVersionPublic> {
+  return apiFetchAuthorized<AgentPackageVersionPublic>(
+    apiUrl(`/marketplace/agents/${id}/versions`),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function fetchPackageVersions(id: string): Promise<AgentPackageVersionPublic[]> {
+  return apiFetchAuthorized<AgentPackageVersionPublic[]>(
+    apiUrl(`/marketplace/agents/${id}/versions`),
+  );
+}
+
+export function publishAgentPackage(id: string): Promise<AgentPackagePublic> {
+  return apiFetchAuthorized<AgentPackagePublic>(apiUrl(`/marketplace/agents/${id}/publish`), {
+    method: "POST",
+  });
+}
+
+export function deprecateAgentPackage(id: string): Promise<AgentPackagePublic> {
+  return apiFetchAuthorized<AgentPackagePublic>(apiUrl(`/marketplace/agents/${id}/deprecate`), {
+    method: "POST",
+  });
+}
+
+export function installAgentPackage(input: InstallRequest): Promise<InstallationPublic> {
+  return apiFetchAuthorized<InstallationPublic>(apiUrl("/marketplace/install"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchInstallations(params: {
+  companyId?: string;
+}): Promise<InstallationPublic[]> {
+  return apiFetchAuthorized<InstallationPublic[]>(
+    apiUrl(`/marketplace/installations${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function confirmInstallation(id: string): Promise<InstallationPublic> {
+  return apiFetchAuthorized<InstallationPublic>(
+    apiUrl(`/marketplace/installations/${id}/confirm`),
+    { method: "POST" },
+  );
+}
+
+export function rejectInstallation(id: string): Promise<InstallationPublic> {
+  return apiFetchAuthorized<InstallationPublic>(apiUrl(`/marketplace/installations/${id}/reject`), {
+    method: "POST",
+  });
+}
+
+export function createPackageReview(
+  id: string,
+  input: { rating?: number; comment?: string; company_id?: string },
+): Promise<AgentPackagePublic> {
+  return apiFetchAuthorized<AgentPackagePublic>(apiUrl(`/marketplace/agents/${id}/reviews`), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchPackageReviews(id: string): Promise<Record<string, unknown>[]> {
+  return apiFetchAuthorized<Record<string, unknown>[]>(apiUrl(`/marketplace/agents/${id}/reviews`));
+}
+
+export function fetchPackageBenchmarks(id: string): Promise<Record<string, unknown>[]> {
+  return apiFetchAuthorized<Record<string, unknown>[]>(
+    apiUrl(`/marketplace/agents/${id}/benchmarks`),
+  );
+}
+
+export function fetchAgentRecommendations(params: {
+  companyId?: string;
+}): Promise<AgentRecommendationPublic[]> {
+  return apiFetchAuthorized<AgentRecommendationPublic[]>(
+    apiUrl(`/agent-recommendations${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function createAgentRecommendation(
+  input: Record<string, unknown>,
+): Promise<AgentRecommendationPublic[]> {
+  return apiFetchAuthorized<AgentRecommendationPublic[]>(apiUrl("/agent-recommendations"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchAgentRecommendation(id: string): Promise<AgentRecommendationPublic> {
+  return apiFetchAuthorized<AgentRecommendationPublic>(apiUrl(`/agent-recommendations/${id}`));
+}
+
+// ── Phase 12: Closed-loop optimization cycles ────────────────────────────────
+
+export function fetchOptimizationCycles(params: {
+  companyId?: string;
+}): Promise<OptimizationCyclePublic[]> {
+  return apiFetchAuthorized<OptimizationCyclePublic[]>(
+    apiUrl(`/optimization-cycles${qs({ company_id: params.companyId })}`),
+  );
+}
+
+export function createOptimizationCycle(
+  input: OptimizationCycleCreate,
+): Promise<OptimizationCyclePublic> {
+  return apiFetchAuthorized<OptimizationCyclePublic>(apiUrl("/optimization-cycles"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchOptimizationCycle(id: string): Promise<OptimizationCyclePublic> {
+  return apiFetchAuthorized<OptimizationCyclePublic>(apiUrl(`/optimization-cycles/${id}`));
+}
+
+export function runOptimizationCycle(id: string): Promise<OptimizationCyclePublic> {
+  return apiFetchAuthorized<OptimizationCyclePublic>(apiUrl(`/optimization-cycles/${id}/run`), {
+    method: "POST",
+  });
+}
+
+export function approveOptimizationCycle(id: string): Promise<OptimizationCyclePublic> {
+  return apiFetchAuthorized<OptimizationCyclePublic>(apiUrl(`/optimization-cycles/${id}/approve`), {
+    method: "POST",
+  });
+}
+
+export function cancelOptimizationCycle(id: string): Promise<OptimizationCyclePublic> {
+  return apiFetchAuthorized<OptimizationCyclePublic>(apiUrl(`/optimization-cycles/${id}/cancel`), {
+    method: "POST",
+  });
 }

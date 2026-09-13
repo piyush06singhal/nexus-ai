@@ -27,6 +27,14 @@ import {
   HeartPulse,
   UserCog,
   ShieldAlert,
+  FlaskConical,
+  Beaker,
+  Layers,
+  GitCompare,
+  SlidersHorizontal,
+  ThumbsUp,
+  Store,
+  Sparkles,
 } from "lucide-react";
 
 export interface NavItem {
@@ -70,6 +78,15 @@ export const NAV_SECTIONS: NavItem[] = [
   { href: "/control/audit", label: "Audit", description: "Append-only hash-chained audit trail with chain verification.", icon: UserCog },
   { href: "/control/health", label: "Health", description: "Live/readiness/dependency probes, metrics, and health records.", icon: HeartPulse },
   { href: "/control/access", label: "Access", description: "Users, roles, permissions, and secret references (never values).", icon: KeyRound },
+  // ── Phase 12: Simulation, Optimization & Agent Marketplace ──
+  { href: "/simulations", label: "Simulation Center", description: "Modeled what-if scenarios — company digital twins, baselines, forecasts, and comparisons. Simulated outputs are estimates, never ACTUAL.", icon: FlaskConical },
+  { href: "/simulations/scenarios", label: "Scenarios", description: "Simulation scenarios — baseline, what-if, stress, capacity, and risk tests across a modeled company.", icon: Layers },
+  { href: "/simulations/compare", label: "Compare", description: "Baseline-versus-scenario comparison — KPI, cost, time, utilization, and risk deltas.", icon: GitCompare },
+  { href: "/optimization", label: "Optimization", description: "Multi-objective optimization problems — constraints, candidates, scores, and tradeoffs.", icon: SlidersHorizontal },
+  { href: "/optimization/recommendations", label: "Recommendations", description: "Explainable optimization recommendations that require explicit approval before any execution.", icon: ThumbsUp },
+  { href: "/experiments", label: "Experiments", description: "Controlled A/B-style experiments — variants, metrics, results, and honest confidence.", icon: Beaker },
+  { href: "/marketplace", label: "Agent Marketplace", description: "Internal metadata-only agent packages — capabilities, versions, benchmarks, reputation, and safe installs.", icon: Store },
+  { href: "/marketplace/recommendations", label: "Agent Recommendations", description: "Evidence-based agent recommendations — ranked on real benchmark and reliability data only.", icon: Sparkles },
   { href: "/settings", label: "Settings", description: "Workforce, provider, security, and infrastructure configuration.", icon: Settings },
 ];
 

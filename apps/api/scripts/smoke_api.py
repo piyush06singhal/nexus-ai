@@ -43,13 +43,12 @@ _PHASE_PREFIXES: dict[int, tuple[str, ...]] = {
     ),
     12: (
         "/api/v1/simulations",
-        "/api/v1/simulation-scenarios",
         "/api/v1/optimization",
         "/api/v1/experiments",
         "/api/v1/benchmarks",
-        "/api/v1/benchmark-runs",
         "/api/v1/marketplace",
         "/api/v1/agent-recommendations",
+        "/api/v1/optimization-cycles",
     ),
 }
 

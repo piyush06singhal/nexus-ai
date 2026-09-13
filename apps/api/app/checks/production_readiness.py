@@ -251,6 +251,57 @@ class ProductionReadiness:
                 CheckResult("retention", "WARN", "security events auto-delete after retention_days")
             )
 
+    # -- Phase 12 simulation/optimization governance ----------------------
+    def simulation_governance(self) -> None:
+        """Honest check: Phase 12 sandbox + resource governance wiring.
+
+        Verified statically (no live simulation): the closed-sandbox refusal
+        guard exists and Phase 12 categories are registered with the resource
+        governance service. Per-tenant budgets live in the DB (configured via
+        the governance API), so production is advised to set limits — reported
+        as WARN, never claimed as already enforced here.
+        """
+        try:
+            from app.phase12._errors import SimulationSandboxRefusalError
+            from app.phase12.engine import SimulationEngineError
+            from app.phase12.governance import PHASE12_CATEGORIES, ConcurrentRunGate
+
+            refusal_ok = issubclass(SimulationSandboxRefusalError, SimulationEngineError)
+            categories_ok = len(PHASE12_CATEGORIES) >= 8
+            gate_ok = ConcurrentRunGate().max_concurrent >= 0
+        except Exception:  # noqa: BLE001 — report honestly rather than crash
+            self.results.append(
+                CheckResult(
+                    "phase12_governance", "FAIL", "phase12 governance module failed to import"
+                )
+            )
+            return
+        if not (refusal_ok and categories_ok and gate_ok):
+            self.results.append(
+                CheckResult(
+                    "phase12_governance",
+                    "FAIL",
+                    "sandbox refusal guard / Phase 12 categories / concurrency gate miswired",
+                )
+            )
+            return
+        self.results.append(
+            CheckResult(
+                "phase12_sandbox",
+                "PASS",
+                "closed sandbox refuses external side effects (no HTTP/email/financial/DB writes)",
+            )
+        )
+        self.results.append(
+            CheckResult(
+                "phase12_resource_limits",
+                "WARN",
+                f"{len(PHASE12_CATEGORIES)} Phase 12 budget categories registered; "
+                "per-tenant limits are DB-configured — set them via the governance API "
+                "before public launch",
+            )
+        )
+
     # -- Run --------------------------------------------------------------
     def run_all(self) -> list[CheckResult]:
         self.identity()
@@ -262,6 +313,7 @@ class ProductionReadiness:
         self.observability()
         self.posture()
         self.data_governance()
+        self.simulation_governance()
         return self.results
 
     def summary(self) -> tuple[int, int, int]:

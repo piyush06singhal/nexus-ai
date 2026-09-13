@@ -221,6 +221,17 @@ class ResourceCategory(StrEnum):
     ITERATIONS = "iterations"
     DURATION_SECONDS = "duration_seconds"
     MEMORY = "memory"
+    # Phase 12 — Simulation, Optimization & Agent Marketplace (native_enum=False,
+    # so these are plain VARCHAR values; no migration/DDL is required to add them).
+    SIM_RUNS = "sim_runs"
+    SIM_ITERATIONS = "sim_iterations"
+    SIM_EVENTS = "sim_events"
+    CONCURRENT_SIM_RUNS = "concurrent_sim_runs"
+    OPTIMIZATION_CANDIDATES = "optimization_candidates"
+    BENCHMARK_CASES = "benchmark_cases"
+    BENCHMARK_RUNS = "benchmark_runs"
+    EXPERIMENT_RUNS = "experiment_runs"
+    MARKETPLACE_OPS = "marketplace_ops"
 
 
 class ResourceLimitScope(StrEnum):

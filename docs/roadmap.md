@@ -1,6 +1,6 @@
 # NEXUS — Roadmap
 
-The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–11 are complete. Phase 12 is planned (preview only — not started).**
+The platform is built incrementally, phase by phase. Each phase ships verifiable functionality and is validated before the next begins. **Phase 0–12 are complete. Phase 13 is planned (preview only — not started).**
 
 ---
 
@@ -195,13 +195,36 @@ Phase 11 turned NEXUS into a **secure, governed, observable, resilient, producti
 
 **Exit criteria (met):** production is enforced (auth + RBAC + policy most-restrictive-wins + audited refusals), secrets are encrypted at rest with no plaintext in logs/DB/API, the audit chain is tamper-evident and verifiable, incident response is a runbook with audited containment actions and SoD, the platform survives provider/job failures without silent loss, and `production_readiness` FAILs a production env missing auth or encryption keys — with dev/test still running open so all prior phases stay green.
 
-## Phase 12 — Preview (not started)
+## ✅ Phase 12 — Simulation, Optimization & Agent Marketplace *(completed)*
 
-- Simulated environment / agent marketplace / digital-twin evaluation.
-- Closed-loop RL / self-modification.
-- Real OS-level sandboxing, Redis-backed worker pools, managed secrets vault, TLS, compliance.
+Phase 12 lets NEXUS **reason forward before deciding**: model an organization in a closed sandbox, optimize governed alternatives, run approval-gated experiments, benchmark and recommend agents, and close the loop `OBSERVE → SIMULATE → OPTIMIZE → PROPOSE → APPROVE → EXECUTE → MEASURE → LEARN → RE-SIMULATE`. It is a **modeled, governed layer** that composes Phases 0–11 (Phase 11 `ResourceGovernanceService` + `PolicyEngine`, Phase 9 `ApprovalGateManager` + `LessonRecorder`, Phase 8 KPIs, Phase 6 evaluation metrics, Phase 7/8 company data) and builds no second runtime/memory/company/governance system. See [docs/phase-12.md](phase-12.md) and the six topic docs.
 
-**Exit criteria:** a documented, gated change (spec §84); not started and not required by Phase 11.
+- **Simulation** (`app/phase12/engine.py`, `simulators.py`, `scenario.py`, `digital_twin.py`, `sim_clock.py`, `variables.py`, `events.py`, `behavior.py`) — closed `SimulationSandbox`, lifecycle `DRAFT → READY → RUNNING ⇄ PAUSED → COMPLETED/FAILED/CANCELLED`, multi-run Monte-Carlo with per-iteration seeds, workforce/budget/KPI/risk simulators, 11 scenario types, typed/bounded variables, deterministic clock with recurring scheduling, checkpoints/restore, baseline-vs-scenario comparisons. `CompanyDigitalTwin` snapshots a company **read-only** (pure SELECTs) with a "not a prediction" disclaimer. Any would-be production/external side effect inside a run is refused (`SANDBOX_REFUSAL`) and fails the run.
+- **Optimization** (`optimization.py`) — weighted multi-objective `OptimizationEngine` with `greedy` / `exhaustive` / `ranking` strategies; candidates are checked against Phase 11 policy (`optimization.apply`) and resource limits *before* scoring; every recommendation carries the §46 ten-part explainability block and flows through an `ApprovalGateManager` gate — **optimization proposes, governance decides**, no auto-production-replacement.
+- **Experimentation** (`experiments.py`) — approval-gated lifecycle `DRAFT → PENDING_APPROVAL → APPROVED → RUNNING → COMPLETED | STOPPED | CANCELLED`, baseline + variants, `record_metric`, honest conclusions WINNER / LOSER / INCONCLUSIVE with explicit sample size, confidence, and limitations (default `inconclusive`).
+- **Benchmarking** (`benchmarking.py`) — versioned, deterministic benchmarks (`BenchmarkSuite` / `BenchmarkCase`) across 8 dimensions (correctness, reliability, tool usage, latency, cost, verification success, recovery, consistency), reusing Phase 6 evaluation metrics; per-case results + per-dimension `AgentBenchmarkScore` aggregates enable agent/version comparison.
+- **Agent marketplace** (`marketplace.py`, `recommend.py`) — **internal, metadata-only** package catalog (capabilities/skills/requirements/benchmark scores/security classification) with `PackageScanner` statically rejecting secrets and executable payloads; read-only digital-twin snapshots; safe install (§37) approval-gated; `AgentRecommendationEngine` ranks published packages from measured signals only; reputation from measurable sources only.
+- **Closed loop** (`loop.py`) — `NEXUSOptimizationLoop` drives the §58 cycle (`observing → … → learning → completed`, with `blocked/failed/cancelled` terminal states); execution is hard-blocked until the gate is approved and merely records an `execute_ref`; lessons recorded via Phase 9 `LessonRecorder`. **No self-modification, no RL** (§48/§49/§66), no simulation-triggered real side effects.
+- **API** — seven routers mounted from one bundle: `/api/v1/simulations`, `/optimization`, `/experiments`, `/benchmarks`, `/marketplace`, `/agent-recommendations`, `/optimization-cycles` (schemas in `app/schemas/phase12.py`).
+- **Migration** — `0014_phase12_sim_opt_mkt` (43 additive tables, revision `0014_phase12_sim_opt_mkt`, revises `0013_security_governance`); `company_id` FK + index on every tenant-scoped table; service enums assert model-enum alignment at import.
+- **Frontend** — four UI centers under `apps/web/src/app/{simulations,optimization,experiments,marketplace}/` on a shared `Phase12Shell`, with confirmation dialogs on destructive/approving actions and honest SIMULATED / FORECAST / ACTUAL and RECOMMENDED / APPROVED / EXECUTED labeling.
+- **Tests** — 7 dedicated backend suites, **112 tests** (`test_phase12_simulation`, `_optimization`, `_experiments`, `_marketplace`, `_closed_loop`, `_security`, `_perf`) on top of the full Phase 0–11 regression.
+- **Checks & demo** — `production_readiness` gains `phase12_sandbox` (PASS) + `phase12_resource_limits` (WARN); dev reads **PASS 8 / WARN 8 / FAIL 0**. `scripts/seed_simulation_optimization.py [--reset]` runs Parts 1–6 + the §69 full autonomous-company-optimization E2E, asserting every outcome is SIMULATED.
+- **Configuration** — Phase 12 adds **no new env vars**; it composes Phase 11 governance limits (per-day budgets for `sim_runs`, `sim_iterations`, `sim_events`, `optimization_candidates`, `benchmark_runs`, `benchmark_cases`, `experiment_runs`, `marketplace_ops`) and engine hard ceilings (`max_ticks=500`, `max_events=5000`, `max_iterations=50`, `run_timeout_seconds=60`, `MAX_CONCURRENT_PHASE12_RUNS=8`).
+
+**Exit criteria (met):** a what-if can be modeled and compared in a closed sandbox; weighted multi-objective optimization proposes §46-explainable, approval-gated recommendations never applied automatically; experiments conclude honestly; agents are benchmarked on versioned deterministic suites; packages are published, recommended from measured signals, and installed only through safe approval-gated install; and the closed loop drives a full observe→…→learn cycle end to end — all deterministic, provider-neutral, tenant-isolated, and assertable via the seed demo + 112 tests.
+
+## Phase 13 — Preview (not started)
+
+Phase 13 is **planned (preview only — not started)**. Candidate scope:
+
+- **Ops / infra hardening** (documented Phase 11/12 deployment items): real OS-level process sandboxing for tool/benchmark execution (namespaces/cgroups today); Redis-backed worker pools replacing DB-as-queue at scale; managed secrets vault (KMS/HashiCorp) behind the `KeyManager` seam; TLS termination in-deployment; compliance certifications (SOC 2 / ISO 27001-style) — none claimed today.
+- **Calibrated modeling** — richer, versioned simulation behavior models and calibrated benchmark evals over real measurement data; improved reproducibility tooling (model versioning, dataset versioning).
+- **Bounded-autonomy extensions** — deeper autonomous planning/replanning levers **within the existing approval-gate invariants** (one gate, one action, once; no finance/hiring/external auto-actions; `MAX_*` limits retained).
+
+**Explicitly NOT a Phase 13 goal:** self-modification of the codebase/governance, or reinforcement learning / reward-driven self-modification of the platform (§48/§49/§66). The closed loop remains human-gated propose → approve → execute → measure → learn → compare-before-resimulating.
+
+**Exit criteria:** a documented, gated change (spec §84); not started and not required by Phase 12.
 
 ---
 

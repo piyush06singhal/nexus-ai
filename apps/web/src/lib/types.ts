@@ -2615,3 +2615,451 @@ export interface SystemHealthRecordPublic {
   latency_ms: number | null;
   recorded_at: string;
 }
+
+// ── Phase 12: Simulation, Optimization & Agent Marketplace ─────────────────
+
+export interface SimulationVariableInput {
+  name: string;
+  kind: string;
+  value?: string | null;
+  min_value?: string | null;
+  max_value?: string | null;
+  default_value?: string | null;
+  description?: string | null;
+  source?: string | null;
+  confidence?: number | null;
+}
+
+export interface SimulationCreate {
+  name: string;
+  description?: string | null;
+  company_id?: string | null;
+  scenario_type?: string;
+  assumptions?: Record<string, unknown> | null;
+  horizon_days?: number | null;
+  clock_tick?: string | null;
+  variables?: SimulationVariableInput[];
+  baseline_simulation_id?: string | null;
+}
+
+export interface SimulationPublic {
+  id: string;
+  company_id: string | null;
+  name: string;
+  description: string | null;
+  scenario_type: string;
+  status: string;
+  model_name: string | null;
+  model_version: string | null;
+  assumptions_json: Record<string, unknown> | null;
+  horizon_days: number | null;
+  clock_tick: string | null;
+  baseline_simulation_id: string | null;
+  sandboxed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SimulationUpdate {
+  name?: string | null;
+  description?: string | null;
+  assumptions?: Record<string, unknown> | null;
+  horizon_days?: number | null;
+  clock_tick?: string | null;
+}
+
+export interface SimulationRunCreate {
+  scenario_id?: string | null;
+  seed?: string | null;
+  iterations?: number | null;
+}
+
+export interface SimulationRunPublic {
+  id: string;
+  simulation_id: string;
+  scenario_id: string | null;
+  company_id: string | null;
+  status: string;
+  seed: string | null;
+  model_name: string | null;
+  model_version: string | null;
+  tick_count: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  summary_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface ScenarioCreate {
+  simulation_id: string;
+  name: string;
+  scenario_type?: string;
+  description?: string | null;
+  company_id?: string | null;
+  assumptions?: Record<string, unknown> | null;
+  horizon_days?: number | null;
+  objective?: Record<string, unknown> | null;
+  is_baseline?: boolean;
+  variables?: SimulationVariableInput[];
+}
+
+export interface ScenarioPublic {
+  id: string;
+  simulation_id: string;
+  company_id: string | null;
+  name: string;
+  scenario_type: string;
+  description: string | null;
+  assumptions_json: Record<string, unknown> | null;
+  horizon_days: number | null;
+  is_baseline: boolean;
+  created_at: string;
+}
+
+export interface SimulationComparisonPublic {
+  id: string;
+  baseline_run_id: string;
+  scenario_run_id: string | null;
+  company_id: string | null;
+  metric_deltas_json: Record<string, unknown> | null;
+  bottleneck_json: Record<string, unknown> | null;
+  summary: string | null;
+  created_at: string;
+}
+
+export interface SimulationSnapshotPublic {
+  id: string;
+  company_id: string | null;
+  source_company_id: string;
+  name: string;
+  model_version: string | null;
+  snapshot_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface SimulationStatePublic {
+  run_id: string;
+  status: string;
+  tick: number;
+  simulation_id: string;
+  scenario_id: string | null;
+  entities: Record<string, unknown>[];
+  events: Record<string, unknown>[];
+}
+
+export interface SimulationEventPublic {
+  id: string;
+  run_id: string;
+  tick: number;
+  event_kind: string;
+  entity_ref: string | null;
+  detail_json: Record<string, unknown> | null;
+}
+
+export interface SimulationMetricsPublic {
+  run_id: string;
+  metrics: Record<string, unknown>[];
+}
+
+export interface SimulationResultsPublic {
+  run_id: string;
+  iterations: number;
+  summary_json: Record<string, unknown> | null;
+  metrics: Record<string, unknown>[];
+  outcomes: Record<string, unknown>[];
+}
+
+export interface OptimizationObjectiveInput {
+  metric: string;
+  direction?: string;
+  weight?: number;
+}
+
+export interface OptimizationVariableInput {
+  name: string;
+  kind?: string;
+  low?: number | null;
+  high?: number | null;
+  default?: number | null;
+  options?: unknown[] | null;
+}
+
+export interface OptimizationProblemCreate {
+  name: string;
+  description?: string | null;
+  company_id?: string | null;
+  strategy?: string | null;
+  objectives?: OptimizationObjectiveInput[];
+  variables?: OptimizationVariableInput[];
+  constraints?: Record<string, unknown>[] | null;
+}
+
+export interface OptimizationProblemPublic {
+  id: string;
+  company_id: string | null;
+  name: string;
+  description: string | null;
+  status: string;
+  objective_json: Record<string, unknown> | null;
+  strategy: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OptimizationRunPublic {
+  id: string;
+  problem_id: string;
+  company_id: string | null;
+  status: string;
+  strategy: string | null;
+  constraints_json: Record<string, unknown> | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  result_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface OptimizationResultsPublic {
+  run_id: string;
+  candidates: Record<string, unknown>[];
+  best_candidate: Record<string, unknown> | null;
+}
+
+export interface RecommendationPublic {
+  id: string;
+  run_id: string;
+  company_id: string | null;
+  status: string;
+  title: string;
+  candidate_values_json: Record<string, unknown> | null;
+  explanation_json: Record<string, unknown> | null;
+  expected_benefit_json: Record<string, unknown> | null;
+  expected_cost_json: Record<string, unknown> | null;
+  risk_json: Record<string, unknown> | null;
+  assumptions_json: Record<string, unknown> | null;
+  approval_gate_id: string | null;
+  approved_at: string | null;
+  rejected_reason: string | null;
+  applied_ref: string | null;
+  created_at: string;
+}
+
+export interface RecommendationReject {
+  reason?: string | null;
+}
+
+export interface ExperimentCreate {
+  name: string;
+  description?: string | null;
+  company_id?: string | null;
+  hypothesis?: string | null;
+  sample_size?: number | null;
+  metrics?: string[] | null;
+  baseline?: Record<string, unknown> | null;
+  variants?: Record<string, unknown>[];
+}
+
+export interface ExperimentPublic {
+  id: string;
+  company_id: string | null;
+  name: string;
+  description: string | null;
+  status: string;
+  hypothesis: string | null;
+  sample_size: number | null;
+  metrics_json: Record<string, unknown> | null;
+  baseline_json: Record<string, unknown> | null;
+  approval_gate_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExperimentResultPublic {
+  id: string;
+  experiment_id: string;
+  conclusion: string;
+  winning_variant_id: string | null;
+  sample_size: number | null;
+  metrics_json: Record<string, unknown> | null;
+  confidence_json: Record<string, unknown> | null;
+  assumptions_json: Record<string, unknown> | null;
+  limitations_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface BenchmarkCreate {
+  name: string;
+  description?: string | null;
+  company_id?: string | null;
+  version?: string | null;
+  dimensions?: string[] | null;
+  cases?: Record<string, unknown>[] | null;
+}
+
+export interface BenchmarkPublic {
+  id: string;
+  company_id: string | null;
+  name: string;
+  description: string | null;
+  status: string;
+  version: string | null;
+  dimensions_json: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BenchmarkRunPublic {
+  id: string;
+  benchmark_id: string;
+  agent_id: string | null;
+  agent_version: string | null;
+  company_id: string | null;
+  status: string;
+  case_count: number;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface BenchmarkResultsPublic {
+  run_id: string;
+  benchmark_id: string;
+  results: Record<string, unknown>[];
+  aggregate: Record<string, unknown> | null;
+}
+
+export interface AgentBenchmarkScorePublic {
+  id: string;
+  agent_id: string | null;
+  benchmark_id: string;
+  dimension: string;
+  score: number;
+  sample_cases: number;
+  created_at: string;
+}
+
+export interface PackageVersionInput {
+  version: string;
+  changelog?: string | null;
+  compatibility?: string;
+  metadata?: Record<string, unknown> | null;
+  capabilities?: string[];
+  dependencies?: Record<string, string>[];
+}
+
+export interface AgentPackageCreate {
+  name: string;
+  display_name?: string | null;
+  description?: string | null;
+  company_id?: string | null;
+  capabilities?: string[];
+  skills?: string[];
+  supported_task_types?: string[];
+  requirements?: Record<string, unknown> | null;
+  security?: string;
+  version?: PackageVersionInput | null;
+}
+
+export interface AgentPackagePublic {
+  id: string;
+  company_id: string | null;
+  name: string;
+  display_name: string | null;
+  description: string | null;
+  status: string;
+  capabilities_json: Record<string, unknown> | null;
+  skills_json: Record<string, unknown> | null;
+  supported_task_types_json: Record<string, unknown> | null;
+  requirements_json: Record<string, unknown> | null;
+  security: string;
+  published_at: string | null;
+  deprecated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentPackageVersionPublic {
+  id: string;
+  package_id: string;
+  version: string;
+  changelog: string | null;
+  compatibility: string;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface InstallRequest {
+  package_id: string;
+  company_id: string;
+  version_id?: string | null;
+  config?: Record<string, unknown> | null;
+  require_approval?: boolean;
+}
+
+export interface InstallationPublic {
+  id: string;
+  package_id: string;
+  version_id: string | null;
+  company_id: string;
+  employee_id: string | null;
+  agent_id: string | null;
+  status: string;
+  approval_gate_id: string | null;
+  config_json: Record<string, unknown> | null;
+  installed_at: string | null;
+  created_at: string;
+}
+
+export interface AgentRecommendationPublic {
+  id: string;
+  company_id: string | null;
+  task_id: string | null;
+  agent_id: string | null;
+  package_id: string | null;
+  request_json: Record<string, unknown> | null;
+  rank: number;
+  score: number;
+  reasoning: string | null;
+  tradeoffs_json: Record<string, unknown> | null;
+  compatibility: string;
+  policy_status: string | null;
+  created_at: string;
+}
+
+export interface ReputationPublic {
+  id: string;
+  agent_id: string | null;
+  company_id: string | null;
+  source: string;
+  score: number;
+  sample_size: number;
+  recorded_at: string;
+}
+
+export interface OptimizationCyclePublic {
+  id: string;
+  company_id: string | null;
+  name: string;
+  status: string;
+  observed_json: Record<string, unknown> | null;
+  scenario_ids_json: unknown[] | null;
+  simulation_run_id: string | null;
+  optimization_run_id: string | null;
+  recommendation_id: string | null;
+  approval_gate_id: string | null;
+  execute_ref: string | null;
+  measures_json: Record<string, unknown> | null;
+  lesson_json: Record<string, unknown> | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+  updated_at: string;
+}
+
+export interface OptimizationCycleCreate {
+  company_id: string;
+  name: string;
+  observe?: boolean;
+}
