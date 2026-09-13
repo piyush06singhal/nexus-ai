@@ -28,7 +28,7 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
-type BadgeStatus =
+export type BadgeStatus =
   | AgentStatus
   | TaskStatus
   | ExecutionStatus

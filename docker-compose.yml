@@ -47,6 +47,9 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_dev}@postgres:5432/${POSTGRES_DB:-nexus}
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: '["http://localhost:3000"]'
+      # The container entrypoint runs `alembic upgrade head` before starting
+      # uvicorn; set AUTO_MIGRATE=false to skip (see .env.example).
+      AUTO_MIGRATE: "${AUTO_MIGRATE:-true}"
     ports:
       - "8000:8000"
     depends_on:
@@ -54,6 +57,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # python:3.14-slim has no curl — use urllib against the unauthenticated
+      # readiness probe (/api/v1/health/ready). Fails → container unhealthy.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=5).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
   web:
     build:
@@ -64,7 +76,16 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      # node:24-alpine — fetch the Next.js home page; anything OK counts.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
 volumes:
   pgdata:

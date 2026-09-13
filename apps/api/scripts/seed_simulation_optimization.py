@@ -46,6 +46,7 @@ import app.db.models  # noqa: E402,F401  (register every model on Base.metadata)
 from app.db.session import Base, SessionLocal  # noqa: E402
 
 DEMO_COMPANY_NAME = "NEXUS Simulation & Optimization"
+DEMO_PACKAGE_NAME = "research-analyst-pro"
 
 
 def _get_or_create_company(db: Session, name: str) -> Any:
@@ -336,11 +337,62 @@ def _part4_product_launch(db: Session, company_id: UUID) -> dict[str, Any]:
     }
 
 
+# ── Marketplace helpers ─────────────────────────────────────────────────────
+def _prune_orphaned_packages(db: Session) -> int:
+    """Delete orphaned demo packages (company_id NULL from the SET NULL cascade).
+
+    Orphaned packages are already excluded from recommendation candidates, but
+    pruning keeps the demo residue-free so ``list_packages`` stays tidy across
+    repeated ``--reset`` runs. Returns the number pruned.
+    """
+    from app.db.models.phase12 import (
+        AgentPackage,
+        AgentPackageBenchmark,
+        AgentPackageCapability,
+        AgentPackageVersion,
+        AgentRecommendation,
+    )
+
+    stale = db.scalars(
+        select(AgentPackage).where(
+            AgentPackage.name == DEMO_PACKAGE_NAME,
+            AgentPackage.company_id.is_(None),
+        )
+    ).all()
+    vers: list[AgentPackageVersion] = []
+    for pkg in stale:
+        vers.extend(
+            db.scalars(select(AgentPackageVersion).where(AgentPackageVersion.package_id == pkg.id))
+        )
+        db.query(AgentRecommendation).filter(AgentRecommendation.package_id == pkg.id).delete(
+            synchronize_session=False
+        )
+    for ver in vers:
+        db.query(AgentPackageBenchmark).filter(AgentPackageBenchmark.version_id == ver.id).delete(
+            synchronize_session=False
+        )
+        db.query(AgentPackageCapability).filter(AgentPackageCapability.version_id == ver.id).delete(
+            synchronize_session=False
+        )
+        db.delete(ver)
+    for pkg in stale:
+        db.delete(pkg)
+    if stale:
+        db.commit()
+    return len(stale)
+
+
 # ── Part 5 — Research Analyst Pro marketplace ───────────────────────────────
 def _part5_marketplace(db: Session, company_id: UUID) -> dict[str, Any]:
     from app.phase12.benchmarking import BenchmarkEngine
     from app.phase12.marketplace import MarketplaceService
     from app.phase12.recommend import RecommendationEngine
+
+    # Any orphan left by a same-run reset is pruned before we publish afresh,
+    # so exactly one published package + zero orphans survive each seed.
+    pruned = _prune_orphaned_packages(db)
+    if pruned:
+        print(f"  [part5] pruned {pruned} orphaned '{DEMO_PACKAGE_NAME}' package(s)")
 
     svc = MarketplaceService(db)
     pkg = svc.create_package(
@@ -529,6 +581,11 @@ def _run_demo(db: Session, *, reset: bool = False) -> dict[str, Any]:
         if existing is not None:
             db.delete(existing)
             db.commit()
+        # The company cascade orphans published packages (company_id SET NULL).
+        # Prune those so a re-seed leaves no stale marketplace residue behind.
+        pruned = _prune_orphaned_packages(db)
+        if pruned:
+            print(f"  [reset] pruned {pruned} orphaned '{DEMO_PACKAGE_NAME}' package(s)")
 
     company = _get_or_create_company(db, DEMO_COMPANY_NAME)
     db.commit()

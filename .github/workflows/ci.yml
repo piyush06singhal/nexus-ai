@@ -15,6 +15,22 @@ jobs:
   backend:
     name: Backend (Python)
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus_ci
+          POSTGRES_DB: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexus -d nexus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
     defaults:
       run:
         working-directory: apps/api
@@ -47,6 +63,21 @@ jobs:
 
       - name: Test (pytest)
         run: pytest -v --tb=short
+
+      - name: Migration round-trip
+        env:
+          DATABASE_URL: postgresql+psycopg://nexus:nexus_ci@localhost:5432/nexus
+          AUTH_ENABLED: "false"
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Production readiness report (non-blocking)
+        env:
+          DATABASE_URL: postgresql+psycopg://nexus:nexus_ci@localhost:5432/nexus
+          AUTH_ENABLED: "false"
+        run: python -m app.checks.production_readiness || true
 
   # ── Frontend ────────────────────────────────────────────────────────────
   frontend:

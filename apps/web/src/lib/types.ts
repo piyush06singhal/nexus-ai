@@ -16,6 +16,15 @@ export interface HealthResponse {
   };
 }
 
+/** Canonical liveness/readiness/dependency probe (final-pass §14). */
+export interface HealthProbe {
+  status: string;
+  service: string;
+  version: string;
+  environment: string;
+  checks: Record<string, ServiceCheck>;
+}
+
 // --- Phase 1: Agent Runtime ---
 
 export type AgentStatus = "draft" | "active" | "inactive";

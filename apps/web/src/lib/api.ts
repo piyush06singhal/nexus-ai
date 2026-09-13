@@ -54,6 +54,7 @@ import type {
   FailureDiagnosis,
   GoalInput,
   GoalScopeType,
+  HealthProbe,
   HealthResponse,
   Kpi,
   KpiInput,
@@ -262,6 +263,21 @@ function apiUrl(path: string): string {
 /** Fetch the backend health status. */
 export function fetchHealth(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>(apiUrl("/health"));
+}
+
+/** Fetch the canonical liveness probe (final-pass §14): 200 whenever up. */
+export function fetchHealthLive(): Promise<HealthProbe> {
+  return apiFetch<HealthProbe>(apiUrl("/health/live"));
+}
+
+/** Fetch the canonical readiness probe: 200 while dependencies serve. */
+export function fetchHealthReady(): Promise<HealthProbe> {
+  return apiFetch<HealthProbe>(apiUrl("/health/ready"));
+}
+
+/** Fetch the canonical dependency probe: per-dependency status. */
+export function fetchHealthDependencies(): Promise<HealthProbe> {
+  return apiFetch<HealthProbe>(apiUrl("/health/dependencies"));
 }
 
 // --- Agents ---

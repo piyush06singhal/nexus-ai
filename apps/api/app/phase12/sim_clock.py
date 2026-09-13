@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 
 @dataclass
@@ -30,7 +30,7 @@ class SimulationClock:
     """Monotonic tick-based clock inside a simulation."""
 
     resolution: str = "day"  # day | hour | week
-    start: datetime = field(default_factory=lambda: datetime.utcnow().replace(tzinfo=None))
+    start: datetime = field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
     _tick: int = 0
     _paused: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)

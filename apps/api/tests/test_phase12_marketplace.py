@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.company.manager import CompanyManager
+from app.db.models.phase12 import AgentPackage
 from app.phase12.benchmarking import BenchmarkEngine
 from app.phase12.marketplace import MarketplaceError, MarketplaceService
 from app.phase12.recommend import RecommendationEngine
@@ -360,6 +361,40 @@ def test_recommendation_ignores_unpublished(db):
     )  # no version, never published
     recs = RecommendationEngine(db).recommend(company_id=company.id, task_type="research")
     assert recs == []
+
+
+def test_recommendation_excludes_orphaned_packages(db):
+    """Packages orphaned by an ondelete=SET NULL company cascade are never candidates."""
+    company = CompanyManager(db).create(name="Orphan Source Co")
+    orphan = _published_package(db, company.id, name="orphan-rec-agent")
+    # Simulate the Postgres ondelete=SET NULL cascade: FK drops to NULL.
+    # (SQLite in tests ignores FK constraints, so we null the column explicitly.)
+    orphan.company_id = None
+    db.commit()
+    assert db.get(AgentPackage, orphan.id).company_id is None  # orphaned
+
+    # A fresh company must not see the orphan in recommendations.
+    fresh = CompanyManager(db).create(name="Fresh Co")
+    _published_package(db, fresh.id, name="fresh-rec-agent")
+    recs = RecommendationEngine(db).recommend(company_id=fresh.id, task_type="research")
+    names = [db.get(AgentPackage, r.package_id).name for r in recs]
+    assert "fresh-rec-agent" in names
+    assert "orphan-rec-agent" not in names
+    assert {db.get(AgentPackage, r.package_id).company_id for r in recs} == {fresh.id}
+
+
+def test_recommendation_company_isolated(db):
+    """Two companies with identical packages still each rank only their own."""
+    co_a = CompanyManager(db).create(name="Isol A")
+    _published_package(db, co_a.id, name="iso-rec-agent", capabilities=["research"])
+    co_b = CompanyManager(db).create(name="Isol B")
+    _published_package(db, co_b.id, name="iso-rec-agent", capabilities=["research"])
+
+    recs_a = RecommendationEngine(db).recommend(company_id=co_a.id, task_type="research")
+    recs_b = RecommendationEngine(db).recommend(company_id=co_b.id, task_type="research")
+    assert len(recs_a) == 1 and len(recs_b) == 1
+    assert db.get(AgentPackage, recs_a[0].package_id).company_id == co_a.id
+    assert db.get(AgentPackage, recs_b[0].package_id).company_id == co_b.id
 
 
 def test_recommendation_tradeoffs_and_compat(db):

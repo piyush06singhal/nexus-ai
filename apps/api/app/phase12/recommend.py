@@ -48,7 +48,7 @@ class RecommendationEngine:
         task_id: UUID | None = None,
     ) -> list[AgentRecommendation]:
         # Candidate pool: packages matching the capability/task.
-        packages = self._candidate_packages(task_type, skills)
+        packages = self._candidate_packages(company_id, task_type, skills)
         scored: list[tuple[float, str, dict[str, Any]]] = []
         for pkg in packages:
             score, reasoning, factors = self._score_package(
@@ -89,19 +89,26 @@ class RecommendationEngine:
 
     def _candidate_packages(
         self,
+        company_id: UUID | None,
         task_type: str,
         skills: list[str] | None,
     ) -> list[AgentPackage]:
-        rows = list(
-            self._db.execute(
-                select(AgentPackage, AgentPackageVersion)
-                .join(
-                    AgentPackageVersion,
-                    AgentPackageVersion.package_id == AgentPackage.id,
-                )
-                .where(AgentPackage.status == "published")
-            ).all()
+        # Candidates are always tenant-scoped: a package with a NULL company_id is
+        # orphaned (its company was deleted and the FK was SET NULL), so it is
+        # never a valid recommendation source for anyone.
+        stmt = (
+            select(AgentPackage, AgentPackageVersion)
+            .join(
+                AgentPackageVersion,
+                AgentPackageVersion.package_id == AgentPackage.id,
+            )
+            .where(AgentPackage.status == "published")
         )
+        if company_id is not None:
+            stmt = stmt.where(AgentPackage.company_id == company_id)
+        else:
+            stmt = stmt.where(AgentPackage.company_id.is_not(None))
+        rows = list(self._db.execute(stmt).all())
         matches: dict[UUID, AgentPackage] = {}
         for pkg in [r[0] for r in rows]:
             # Capability match from the package JSON + per-version rows.

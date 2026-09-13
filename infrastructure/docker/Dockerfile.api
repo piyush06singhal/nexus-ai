@@ -16,10 +16,17 @@ COPY apps/api/app ./app
 COPY apps/api/alembic ./alembic
 COPY apps/api/alembic.ini ./alembic.ini
 
+# Container entrypoint: applies Alembic migrations by default (AUTO_MIGRATE=false
+# opts out), then execs the CMD. See infrastructure/docker/docker-entrypoint.sh.
+COPY infrastructure/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Run as a non-root user (security: least privilege by default).
 RUN useradd --create-home nexus && chown -R nexus:nexus /app
 USER nexus
 
 EXPOSE 8000
+
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
