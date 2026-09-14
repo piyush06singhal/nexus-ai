@@ -239,6 +239,25 @@ class AnthropicProvider(BaseModelProvider):
             },
         )
 
+    def structured_output(
+        self,
+        messages: list[ChatMessage],
+        *,
+        schema: type,
+        options: GenerationOptions | None = None,
+    ) -> object:
+        """Structured outputs. Keyless/stub mode matches the OpenAI adapter's
+        offline contract (a validated default instance, deterministic); with a
+        key this delegates to the base JSON-parse+validate path. Protocol-level
+        enforcement for Anthropic maps to their tool-use JSON mode and is a
+        documented future step, so real Anthropic structured requests remain on
+        the same parse+validate seam as before.
+        """
+        if self.stub_enabled or not self.api_key:
+            self._log_fallback("stub_enabled" if self.stub_enabled else "no_api_key")
+            return schema.model_validate({})
+        return super().structured_output(messages, schema=schema, options=options)
+
     # ── request construction ───────────────────────────────────────────────
 
     def _build_payload(

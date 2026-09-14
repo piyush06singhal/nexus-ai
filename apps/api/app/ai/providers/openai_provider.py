@@ -14,7 +14,10 @@ platform never silently breaks:
 With a key, ``generate``/``stream`` make the real API call (bounded timeout,
 exponential-backoff retries on transient failures), parse usage into
 ``ModelResponse``, and record token metrics into the process registry
-(``app.core.metrics.model_tokens``).
+(``app.core.metrics.model_tokens``). ``structured_output`` requests the
+protocol-level ``response_format: json_schema`` mode so the API itself
+constrains the reply to the target Pydantic schema, then validates the
+response — keyless mode degrades to a validated default instance.
 
 Native OpenAI ``tool_calls`` (when the API returns them) are mapped into the
 runtime's JSON ``{"tool_calls": [...]}`` shape so the tool loop can consume
@@ -132,6 +135,72 @@ class OpenAIProvider(BaseModelProvider):
             },
         )
         return response
+
+    def structured_output(
+        self,
+        messages: list[ChatMessage],
+        *,
+        schema: type,
+        options: GenerationOptions | None = None,
+    ) -> object:
+        """Protocol-level structured outputs via OpenAI json_schema mode.
+
+        The native path adds ``response_format: {"type": "json_schema", ...}``
+        (on the same ``_request``/retry path as ``generate``) so the API itself
+        constrains the reply to ``schema``'s JSON shape; the response is then
+        JSON-parsed and ``model_validate``d.
+
+        Two safe degradations, never a silent failure:
+
+        - Keyless/stub mode: nothing to parse without a model, so a *validated
+          default instance* (``schema.model_validate({})``) is returned — the
+          deterministic offline contract. Schemas used with structured output
+          should therefore give every field a default.
+        - API rejection of the ``json_schema`` parameter (older models or
+          OpenAI-compatible endpoints): re-issues on the plain path via
+          :meth:`BaseModelProvider.structured_output`, which re-raises only if
+          the underlying cause is real (auth, rate limit, etc.).
+        """
+        if self.stub_enabled or not self.api_key:
+            self._log_fallback("stub_enabled" if self.stub_enabled else "no_api_key")
+            return schema.model_validate({})
+
+        payload = self._build_payload(messages, options)
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema.__name__,
+                "strict": False,
+                "schema": schema.model_json_schema(),
+            },
+        }
+        started = time.perf_counter()
+        try:
+            data = _request(
+                method="POST",
+                path=_CHAT_PATH,
+                base_url=self.base_url,
+                api_key=self.api_key,
+                json_body=payload,
+                timeout=self.timeout,
+                max_retries=self.max_retries,
+                backoff=self.retry_backoff,
+                transport=self._transport,
+            )
+        except (OpenAIRequestError, OpenAIUnavailableError) as exc:
+            logger.debug(
+                "openai.structured_output.degraded",
+                extra={"cause": str(exc)},
+            )
+            return super().structured_output(messages, schema=schema, options=options)
+
+        latency_ms = (time.perf_counter() - started) * 1000.0
+        response = self._parse(data, options, latency_ms)
+        try:
+            parsed = json.loads(response.content)
+        except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+            raise ValueError("Provider returned non-JSON for structured output") from exc
+        return schema.model_validate(parsed)
 
     def stream(
         self,

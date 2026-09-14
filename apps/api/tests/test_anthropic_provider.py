@@ -215,6 +215,35 @@ def test_generate_retries_exhausted_raises_unavailable():
         provider.generate(MESSAGES)
 
 
+def test_structured_output_keyless_returns_validated_default_instance():
+    from pydantic import BaseModel
+
+    class PlayerSchema(BaseModel):
+        name: str = ""
+        score: int = 0
+
+    provider = AnthropicProvider(api_key="")
+    result = provider.structured_output(MESSAGES, schema=PlayerSchema)
+    assert result.name == ""
+    assert result.score == 0
+
+
+def test_structured_output_with_key_delegates_to_base_json_path():
+    from pydantic import BaseModel
+
+    class PlayerSchema(BaseModel):
+        name: str = ""
+        score: int = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_messages_response('{"name": "claude", "score": 9}'))
+
+    provider = AnthropicProvider(api_key=KEY, transport=httpx.MockTransport(handler), max_retries=2)
+    result = provider.structured_output(MESSAGES, schema=PlayerSchema)
+    assert result.name == "claude"
+    assert result.score == 9
+
+
 def test_missing_content_raises_unavailable():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"id": "msg_1", "model": "claude-sonnet-5"})

@@ -361,9 +361,82 @@ def test_custom_base_url_is_used():
     assert seen_urls == ["http://localhost:9999/v1/chat/completions"]
 
 
+def _structured_schema():
+    """A fully-defaulted Pydantic schema for structured-output tests."""
+    from pydantic import BaseModel
+
+    class PlayerSchema(BaseModel):
+        name: str = ""
+        score: int = 0
+
+    return PlayerSchema
+
+
+def test_structured_output_sends_native_json_schema_mode():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=_chat_response('{"name": "ada", "score": 7}'))
+
+    provider = OpenAIProvider(api_key=KEY, transport=httpx.MockTransport(handler), max_retries=2)
+    Schema = _structured_schema()
+    result = provider.structured_output(MESSAGES, schema=Schema)
+
+    # Native json_schema mode enforced by the API, then validated.
+    assert result.name == "ada"
+    assert result.score == 7
+    fmt = captured["body"]["response_format"]
+    assert fmt["type"] == "json_schema"
+    assert fmt["json_schema"]["name"] == "PlayerSchema"
+    assert fmt["json_schema"]["strict"] is False
+    assert fmt["json_schema"]["schema"] == Schema.model_json_schema()
+
+
+def test_structured_output_keyless_returns_validated_default_instance():
+    provider = OpenAIProvider(api_key="")
+    result = provider.structured_output(MESSAGES, schema=_structured_schema())
+    # Offline deterministic contract: a validated default instance.
+    assert result.name == ""
+    assert result.score == 0
+
+
+def test_structured_output_degrades_when_json_schema_rejected():
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        bodies.append(body)
+        if "response_format" in body:
+            return httpx.Response(400, json={"error": {"message": "response_format unsupported"}})
+        return httpx.Response(200, json=_chat_response('{"name": "grace", "score": 3}'))
+
+    provider = OpenAIProvider(
+        api_key=KEY, transport=httpx.MockTransport(handler), max_retries=1, retry_backoff=0.0
+    )
+    result = provider.structured_output(MESSAGES, schema=_structured_schema())
+    assert result.name == "grace"
+    assert result.score == 3
+    # Native attempt rejected the json_schema param; the base path re-issued
+    # without response_format (4xx is not retried, so exactly two requests).
+    assert len(bodies) == 2
+    assert "response_format" in bodies[0]
+    assert "response_format" not in bodies[1]
+
+
+def test_structured_output_invalid_response_propagates_validation_error():
+    from pydantic import ValidationError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_response('{"name": 42}'))  # name not a str
+
+    provider = OpenAIProvider(api_key=KEY, transport=httpx.MockTransport(handler), max_retries=1)
+    with pytest.raises(ValidationError):
+        provider.structured_output(MESSAGES, schema=_structured_schema())
+
+
 @pytest.mark.live_api
 def test_live_chat_completion():
-    """Real round-trip against api.openai.com (requires OPENAI_API_KEY)."""
     key = _live_key()
     if key is None:
         pytest.skip("OPENAI_API_KEY not set")

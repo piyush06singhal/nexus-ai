@@ -310,7 +310,7 @@ runs inherit.
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                    # 1138 tests + 4 keyless skips
+.venv/bin/pytest -q                    # 1144 tests + 4 keyless/pgvector skips (skips resolved on a live Postgres)
 .venv/bin/ruff check .                 # lint
 .venv/bin/ruff format --check .        # format
 
