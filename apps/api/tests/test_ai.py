@@ -39,9 +39,11 @@ def test_register_provider():
 
 
 def test_stub_provider_generate_requires_flag():
+    # Without a key the provider degrades to a deterministic fallback rather
+    # than raising — a stranger's checkout must never break on a missing key.
     provider = get_provider("openai")
-    with pytest.raises(NotImplementedError):
-        provider.generate([ChatMessage(role="user", content="hello")])
+    response = provider.generate([ChatMessage(role="user", content="hello")])
+    assert response.content.startswith("[stub:openai]")
 
 
 def test_stub_provider_canned_output():

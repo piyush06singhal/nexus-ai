@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     workflow_max_execution_duration_seconds: int = 3600
     workflow_execute_sync: bool = False  # True in tests: execute runs inline
 
+    # Model providers (real OpenAI if a key is present; keyless falls back to Mock)
+    openai_api_key: str = ""
+    openai_base_url: str = ""  # empty -> https://api.openai.com/v1 (allows compatible endpoints)
+    openai_default_model: str = "gpt-4o-mini"
+    openai_request_timeout_seconds: float = 60.0
+    openai_max_retries: int = 2
+    openai_retry_backoff_seconds: float = 1.0
+
     # Memory system (Phase 4)
     memory_embedding_provider: str | None = None  # "openai" to enable embeddings, else None
     memory_embedding_model: str = "text-embedding-3-small"

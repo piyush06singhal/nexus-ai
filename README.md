@@ -2,7 +2,7 @@
 
 **A production-framed, fully-tested, open-source platform where AI agents plan, coordinate, execute, verify, heal, simulate, and recommend — inside a governed company structure with approvals and full auditability. Not a chatbot.**
 
-> **Honest status:** development/demo platform, **not** a live production deployment. Everything runs end-to-end with real data flow, storage, and governance on your machine — but the intelligence layer uses a deterministic **MockProvider** (a real third-party LLM adapter is a planned next step, see [below](#is-this-real-or-a-demo)). No API keys required anywhere.
+> **Honest status:** development/demo platform, **not** a live production deployment. Everything runs end-to-end with real data flow, storage, and governance on your machine — and the intelligence layer ships a **real, keyed OpenAI adapter** (`OpenAIProvider`) that activates when `OPENAI_API_KEY` is set. By default (no key) it runs on the deterministic **MockProvider**, so nothing breaks on a stranger's machine. No API keys required anywhere (see [Is This Real or a Demo?](#is-this-real-or-a-demo) and [Production mode](#production-mode)).
 
 ---
 
@@ -130,8 +130,8 @@ flowchart TD
     end
 
     subgraph AI["🤖 AI Providers"]
-        Mock["MockProvider (deterministic — the ONE real provider, CI/tests, no keys)"]
-        Real["OpenAIProvider (stub, returns canned text — NO real LLM calls yet)"]
+        Mock["MockProvider (deterministic — default, CI/tests, no keys)"]
+        Real["OpenAIProvider (real when OPENAI_API_KEY set; keyless fallback otherwise)"]
     end
 
     %% Client → Gateway
@@ -278,12 +278,12 @@ The layer-by-layer engineering reference and the responsibility-boundary diagram
 
 Straight answer, no spin:
 
-- ✅ **The pipeline is real and fully wired.** Data flows end-to-end: Web UI → Next.js proxy → FastAPI → PostgreSQL. Storage, retrieval, execution records, approvals, audit chains, KPIs, benchmarks — all real database-backed operations, all verified by 1093 backend tests + 141 frontend tests.
+- ✅ **The pipeline is real and fully wired.** Data flows end-to-end: Web UI → Next.js proxy → FastAPI → PostgreSQL. Storage, retrieval, execution records, approvals, audit chains, KPIs, benchmarks — all real database-backed operations, all verified by 1115 backend tests + 141 frontend tests.
 - ✅ **It runs on a stranger's machine.** Verified by cold-starting from empty volumes: `docker compose up` on a clean checkout auto-migrates 156 tables and seeds live demo data, with every UI page responding HTTP 200.
-- ⚠️ **The intelligence is deterministic, not a real LLM.** All agent/tool/workflow "thinking" is produced by a `MockProvider` (a real, deterministic provider that needs no API key). An **`OpenAIProvider` stub ships** — it accepts the config but returns canned text; it does **not** call OpenAI. The provider **seam** is real and pluggable ([`app/ai/providers/`](apps/api/app/ai/providers/)) — building a real LLM adapter is the highest-value next step.
+- ⚠️ **The intelligence is deterministic by default, real when you opt in.** All agent/tool/workflow "thinking" runs on the `MockProvider` (deterministic, needs no API key) unless `OPENAI_API_KEY` is set — then the **real `OpenAIProvider`** makes actual Chat Completions calls (bounded timeout, exponential-backoff retries, token metrics), and `OpenAIEmbeddingProvider` calls real embeddings, with graceful keyless fallback so a stranger's machine never breaks. Set `memory_embedding_provider=openai` in `.env` to enable semantic embeddings.
 - ⚠️ **It is a development/demo platform, not a live production deployment.** Auth is off by default (`AUTH_ENABLED=false`), there's no TLS, single host, and no compliance certifications or SLAs are claimed. The `production_readiness` check intentionally FAILs until those are configured.
 
-**API keys?** None required — and none are used. Every demo, test, and page runs on the MockProvider. `provider="openai"` will not make real calls until a real adapter is implemented.
+**API keys?** None required — every demo, test, and page runs on the MockProvider, and the OpenAI adapters silently fall back to deterministic output when no key is set. Add `OPENAI_API_KEY` to your local `.env` and agents using `provider="openai"` make **real** model calls (usage is metered to your key at your cost); sessions without a key keep running unchanged.
 
 **What happens on real data?** The same paths handle real users/companies/agents/tasks — the seed data and live CRUD go through identical APIs and tables. The only simulation-specific behavior is deliberately labeled SIMULATED / FORECAST / RECOMMENDATION and never mutates production rows.
 
@@ -330,7 +330,7 @@ Screen size matters here — **[docs/ui-tour.md](docs/ui-tour.md)** walks every 
 - **Backend**: FastAPI + SQLAlchemy + Alembic (head `0014_phase12_sim_opt_mkt`), Python 3.14, psycopg (PostgreSQL 16), pydantic-settings. Runtime deps pinned to the CI-validated set.
 - **Frontend**: Next.js 16 (App Router), React 19, Tailwind v4, TypeScript (strict), vitest.
 - **Infrastructure**: Docker Compose (postgres/redis/api/web, healthchecks), auto-migration entrypoint (`AUTO_MIGRATE`), CI with migration round-trip + readiness gate.
-- **AI**: provider-agnostic `ModelProvider` seam ([`app/ai/providers/`](apps/api/app/ai/providers/)) — **one** shipped provider, `MockProvider`, deterministic and API-key-free. An `OpenAIProvider` **stub** exists for extension; **no real third-party LLM adapter is implemented yet** (see [Is This Real or a Demo?](#is-this-real-or-a-demo)).
+- **AI**: provider-agnostic `ModelProvider` seam ([`app/ai/providers/`](apps/api/app/ai/providers/)) — **two** shipped providers: `MockProvider` (deterministic, API-key-free, the default) and a **real `OpenAIProvider`** (Chat Completions over httpx with retry/backoff, keyless fallback, token-cost metrics). An `OpenAIEmbeddingProvider` (same transport) powers semantic memory when configured. Providers activate by setting `OPENAI_API_KEY` (see [Is This Real or a Demo?](#is-this-real-or-a-demo)).
 
 ---
 
@@ -367,8 +367,37 @@ resource limits, redaction, telemetry/metrics. Health probes at
 
 **Boundaries (never claimed):** no compliance certifications, no production
 SLAs (perf numbers are dev-environment measurements), no managed vault, no
-real-LLM production deployment. Optimizations **propose** — governance
+real-LLM **deployment** (real LLM calls are opt-in via your own `OPENAI_API_KEY`,
+metered to your account). Optimizations **propose** — governance
 **decides**. Simulation outputs are forecasts, never commitments.
+
+### Production mode
+
+Auth, rate limiting, observability, security headers, and request-body limits
+all ship in this repo and are wired end-to-end, but they are **gated off by
+default** so the demo and the full test suite stay open. `scripts/run_production.sh`
+flips the production chain on and verifies it over HTTP in one command:
+
+```bash
+bash scripts/run_production.sh
+```
+
+What it does: starts Postgres + Redis, applies migrations, seeds core company
+data, boots the API with `AUTH_ENABLED=true RATE_LIMIT_ENABLED=true
+METRICS_ENABLED=true` (plus fresh ephemeral JWT/encryption secrets), then
+proves the enforced chain end-to-end — unauthenticated request → `401
+auth_required`, bootstrap-admin login → bearer token, authed read → `200`,
+wrong password → `403 invalid_credentials`, a concurrent load baseline, and a
+production-readiness report. A sample production env is documented in
+[`apps/api/.env.production.example`](apps/api/.env.production.example) and the
+full picture lives in [docs/operations.md](docs/operations.md) (§Production
+mode & load baseline) + [docs/security.md](docs/security.md).
+
+**What stays demo-only even in production mode:** a single host, in-process
+worker threads (not a distributed queue), in-memory rate-limit buckets, and no
+compliance certifications or SLAs. Perf bounds are indicative dev-machine
+measurements, not contracts. See the production-readiness check for the
+deliberately-failing items (`python -m app.checks.production_readiness`).
 
 - [docs/security.md](docs/security.md) · [docs/threat-model.md](docs/threat-model.md)
 - [docs/operations.md](docs/operations.md) · [docs/incident-response.md](docs/incident-response.md)
@@ -380,7 +409,7 @@ real-LLM production deployment. Optimizations **propose** — governance
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                                # 1093 tests across 100 files
+.venv/bin/pytest -q                                # 1115 tests across 104 files
 .venv/bin/ruff check app tests scripts
 .venv/bin/ruff format --check app tests scripts
 
@@ -407,7 +436,7 @@ nexus-ai/
 │   │   ├── app/
 │   │   │   ├── core/        # config, logging, errors, telemetry, metrics, redaction
 │   │   │   ├── api/v1/      # versioned HTTP endpoints + health probes
-│   │   │   ├── ai/          # ModelProvider seam (mock = real; openai = stub)
+│   │   │   ├── ai/          # ModelProvider seam (mock = default; openai = real when keyed)
 │   │   │   ├── db/models/   # SQLAlchemy models (156 tables, phases 0–12)
 │   │   │   ├── schemas/     # Pydantic contracts
 │   │   │   ├── services/    # persistence + runtime assembly
@@ -418,7 +447,7 @@ nexus-ai/
 │   │   │   └── checks/     # production_readiness
 │   │   ├── alembic/        # migrations (0014 = Phase 12 head)
 │   │   ├── scripts/        # 5 seeds, smoke_api, perf_baseline
-│   │   └── tests/          # 1093 tests (SQLite, MockProvider)
+│   │   └── tests/          # 1115 tests (SQLite, MockProvider)
 │   └── web/        # Next.js frontend (approvals, settings, phase-12 centers, shells)
 │       ├── src/app/
 │       ├── src/components/
@@ -599,7 +628,7 @@ NEXUS agents now have a **persistent memory**. When an agent completes a task, t
 
 **Five memory types** (`working`, `episodic`, `semantic`, `procedural`, `structured`) live in a single `memories` table, isolated by **namespace** and scoped by **ownership** (agent or system). Working memory expires via TTL; every memory can be active, archived, or expired.
 
-**Retrieval is hybrid** — `HybridRetriever` scores memories by weighted **semantic** (embedding cosine, when a provider is present) + **keyword** (Dice overlap) + **recency** (half-life decay) + **importance** + **confidence**, and exposes a per-result `breakdown` so you can see *why* something ranked. Embeddings are provider-independent: the bundled `MockEmbeddingProvider` is deterministic and free (works in CI), and `OpenAIEmbeddingProvider` is scaffolded for later. With no provider configured, retrieval still works via keyword matching.
+**Retrieval is hybrid** — `HybridRetriever` scores memories by weighted **semantic** (embedding cosine, when a provider is present) + **keyword** (Dice overlap) + **recency** (half-life decay) + **importance** + **confidence**, and exposes a per-result `breakdown` so you can see *why* something ranked. Embeddings are provider-independent: the bundled `MockEmbeddingProvider` is deterministic and free (works in CI), and `OpenAIEmbeddingProvider` (works when `OPENAI_API_KEY` is set) calls the real `/embeddings` API with a neutral-vector fallback when keyless. With no provider configured, retrieval still works via keyword matching.
 
 **The runtime integrates memory into the loop**: it retrieves relevant memories *before* building the context (injecting a `[Memory]`-labeled section into the system prompt) and extracts+persists new memories *after* execution completes. Both hooks are best-effort and never block a run. Access is tracked (count + timestamp) on everything actually injected.
 

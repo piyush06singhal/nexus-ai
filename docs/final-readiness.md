@@ -11,7 +11,7 @@ governance bypass.
 
 | Area | Audit result |
 |------|--------------|
-| Backend tests | 1093 across 100 files, file-backed SQLite + deterministic `MockProvider` |
+| Backend tests | 1115 across 104 files, file-backed SQLite + deterministic `MockProvider` (2 `live_api` tests auto-skip keyless) |
 | Frontend tests | 141 (vitest) |
 | Lint / format | `ruff check` + `ruff format --check` clean |
 | Typecheck / build | `tsc --noEmit` clean; Next.js 16 production build clean |

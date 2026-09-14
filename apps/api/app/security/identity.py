@@ -261,6 +261,11 @@ class UserAccountManager:
             password=settings.auth_dev_bootstrap_password,
             is_bootstrap=True,
         )
+        # The bootstrap admin must actually administer: grant the platform-admin
+        # role (wildcard permission), else a fresh deploy has no usable login.
+        from app.security.authorization import RoleService
+
+        RoleService(self.db).assign_roles_to_identity(identity.id, [ADMIN_ROLE_CODE])
         logger.warning(
             "security.bootstrap_admin",
             extra={"email": identity.external_ref},

@@ -68,11 +68,11 @@ class AuthService:
                 "auth.login_failed",
                 extra={"email": email, "ip": ip},
             )
-            raise PermissionDeniedError("Invalid credentials.", code="invalid_credentials")
+            self._deny(PermissionDeniedError("Invalid credentials.", code="invalid_credentials"))
         user, identity = verified
         if identity.status != IdentityStatus.ACTIVE.value:
             self.events.auth_failure(email=email, ip=ip or "", reason=f"identity_{identity.status}")
-            raise PermissionDeniedError("Identity is not active.", code="identity_inactive")
+            self._deny(PermissionDeniedError("Identity is not active.", code="identity_inactive"))
         self.users.mark_success(user)
         self.identities.touch_last_active(identity.id)
         return self._open_session(identity, ip=ip, user_agent=user_agent, user=user)
@@ -85,10 +85,13 @@ class AuthService:
             payload = self.tokens.verify_token(token)
         except InvalidToken as exc:
             self.events.token_invalid(reason=str(exc), ip=ip or "")
-            raise PermissionDeniedError(
-                "Missing or invalid authentication token.",
-                code="auth_required",
-            ) from exc
+            self._deny(
+                PermissionDeniedError(
+                    "Missing or invalid authentication token.",
+                    code="auth_required",
+                ),
+                from_exc=exc,
+            )
         identity_id = UUID(payload["sub"])
         identity = self.identities.get_optional(identity_id)
         if identity is None or identity.status != IdentityStatus.ACTIVE.value:
@@ -100,12 +103,14 @@ class AuthService:
         session = self.sessions.get_by_refresh_token(refresh_token)
         if session is None:
             self.events.token_invalid(reason="unknown_refresh_token", ip=ip or "")
-            raise PermissionDeniedError("Refresh token is invalid.", code="invalid_credentials")
+            self._deny(
+                PermissionDeniedError("Refresh token is invalid.", code="invalid_credentials")
+            )
         try:
             self.sessions.require_active(session)
-        except PermissionDeniedError:
+        except PermissionDeniedError as exc:
             self.events.token_invalid(reason="session_not_active", ip=ip or "")
-            raise
+            self._deny(exc)
         identity = self.identities.get_optional(session.identity_id)
         if identity is None or identity.status != IdentityStatus.ACTIVE.value:
             raise PermissionDeniedError("Identity is not active.", code="identity_inactive")
@@ -129,6 +134,18 @@ class AuthService:
     def revoke_identity_sessions(self, identity_id: UUID, *, by: UUID | None = None) -> int:
         """Revoke every active session of a principal (enable on incident action)."""
         return self.sessions.revoke_all_for_identity(identity_id, by=by)
+
+    def _deny(self, exc: PermissionDeniedError, *, from_exc: BaseException | None = None) -> None:
+        """Persist then raise *exc* on an auth failure.
+
+        Failed-auth paths (bad login, invalid token, dead session) return a 4xx
+        and the endpoint's success-path ``db.commit()`` never runs — so without
+        an explicit commit here the AUTH_FAILURE/TOKEN_INVALID event AND any
+        account lock-out set by ``verify_login`` would be silently rolled back,
+        defeating audit logging and brute-force lockout over HTTP.
+        """
+        self.db.commit()
+        raise exc from from_exc
 
     # ── session result helpers ─────────────────────────────────────────────
 

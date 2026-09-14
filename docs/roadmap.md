@@ -229,7 +229,18 @@ A portfolio-facing pass answering "does this run on a stranger's machine, and is
 
 - **Hardened setup for new machines** — `scripts/setup.sh` now gates on Python ≥ 3.14 with an actionable error + Docker-fallback hint; the dead `packages/shared` package (nothing imported it) was removed; `apps/api/requirements.txt` pins the top-level runtime deps to the exact CI-validated set; `.env.example` documents that Docker is canonical and **no API keys are required** (none are used).
 - **Default company ordering fix** — `CompanyManager.list_` now orders `created_at.asc()`, so the seeded flagship (NEXUS Labs, full demo data) is the UI's default company pick; per-user localStorage overrides still win.
-- **Professional README + real UI captures** — `README.md` rewritten with an inline renderable Mermaid architecture diagram, honest "real vs demo" section (MockProvider is the only real AI provider; the OpenAI adapter is a stub), a first-run "what to do next" guide, an API-keys section, and a troubleshooting table; 8 real UI screenshots in `docs/images/` plus the route-by-route [UI tour](ui-tour.md).
+- **Professional README + real UI captures** — `README.md` rewritten with an inline renderable Mermaid architecture diagram, honest "real vs demo" section, a first-run "what to do next" guide, an API-keys section, and a troubleshooting table; 8 real UI screenshots in `docs/images/` plus the route-by-route [UI tour](ui-tour.md).
+
+### Follow-up: Production-gap pass (2026-09-14)
+
+An audit-driven pass closing the gaps a production-minded review surfaced. Four of the seven "missing" items turned out to already exist and be production-grade — just gated off — so the pass *corrected the record* and built the genuinely-missing pieces:
+
+- **Corrected: auth, rate limiting, observability, workers already existed.** Full JWT+RBAC+sessions+refresh-rotation, sliding-window rate limiting, metrics/structured logging/security headers, and the workflow worker were all real but gated by `AUTH_ENABLED`/`RATE_LIMIT_ENABLED`/`METRICS_ENABLED`/`WORKFLOW_WORKER_ENABLED` (defaults off). The unit suite was already isolated on SQLite.
+- **Real OpenAI provider (the one true gap).** `OpenAIProvider` is no longer a stub: a shared httpx transport (`app/ai/providers/_client.py`) with bounded exponential-backoff retries and clean error mapping drives real Chat Completions (parsed usage → `ModelResponse`, token-cost metrics, native `tool_calls` mapping) and real `/embeddings` (`OpenAIEmbeddingProvider`, neutral-vector fallback). Both auto-fallback keyless so a fresh checkout never breaks; a `live_api`-marked test round-trips when `OPENAI_API_KEY` is set (else skips).
+- **Orchestration worker completed.** `app/orchestration/worker.py` dequeues orchestrations off the request path when `ORCHESTRATION_WORKER_ENABLED=true` (atomic claim via `FOR UPDATE SKIP LOCKED` on Postgres, mid-run stale recovery on startup, mirrors the workflow worker). Default stays off so the synchronous path is untouched.
+- **Production mode, verified over HTTP.** `scripts/run_production.sh` boots the stack with auth+rate-limit+metrics on and proves the chain end-to-end (unauth 401 → bootstrap login → 200, wrong password 403, concurrent load baseline, readiness report). Documented production env in `apps/api/.env.production.example`.
+- **Load baseline.** `apps/api/scripts/load_baseline.py` runs a dependency-free concurrent client mix (p50/p95/p99, throughput, error rate; dev-machine bounds, not SLAs).
+- **Docs corrected to match.** README/architecture "stub → real when keyed"; production-mode section; measured bounds recorded in [operations.md](operations.md); backend tests grew to **1115 across 104 files**.
 
 ## Phase 13 — Preview (not started)
 

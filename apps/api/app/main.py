@@ -24,14 +24,15 @@ logger = get_logger(__name__)
 async def lifespan(_app: FastAPI):
     """Startup/shutdown lifecycle.
 
-    Configures logging and, when enabled, starts the workflow worker and
-    scheduler daemon threads.
+    Configures logging and, when enabled, starts the workflow worker,
+    workflow scheduler, and orchestration worker daemon threads.
     """
     setup_logging()
     logger.info("NEXUS API starting", extra={"env": settings.environment})
 
     worker = None
     scheduler = None
+    orchestration_worker = None
     if settings.workflow_worker_enabled:
         from app.db.session import SessionLocal
         from app.workflow.scheduler import WorkflowScheduler
@@ -48,12 +49,37 @@ async def lifespan(_app: FastAPI):
         worker.start()
         scheduler.start()
 
+    if settings.orchestration_worker_enabled:
+        from app.db.session import SessionLocal
+        from app.orchestration.worker import OrchestrationWorker
+
+        orchestration_worker = OrchestrationWorker(
+            SessionLocal,
+            poll_interval=settings.workflow_worker_poll_interval,  # reuse poll interval
+        )
+        orchestration_worker.start()
+
+    # Bootstrap admin: non-prod deployments with AUTH_DEV_BOOTSTRAP_* get a
+    # usable login on first startup when no admin exists (no-op otherwise).
+    if settings.auth_enabled and settings.auth_dev_bootstrap_email:
+        from app.db.session import SessionLocal
+        from app.security.identity import UserAccountManager
+
+        session = SessionLocal()
+        try:
+            UserAccountManager(session).bootstrap_admin()
+            session.commit()
+        finally:
+            session.close()
+
     yield
 
     if worker is not None:
         worker.stop()
     if scheduler is not None:
         scheduler.stop()
+    if orchestration_worker is not None:
+        orchestration_worker.stop()
     logger.info("NEXUS API shutting down")
 
 

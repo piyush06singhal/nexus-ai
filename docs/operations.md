@@ -159,11 +159,65 @@ Run on: file-backed SQLite + `MockProvider` (deterministic). Not representative 
 
 ---
 
+## 10b. Production Mode & Concurrent Load Baseline
+
+Auth, rate limiting, and observability ship but are gated off by default so the
+demo and test suite stay open. `scripts/run_production.sh` flips the production
+chain on and verifies it over HTTP in one command:
+
+```bash
+bash scripts/run_production.sh    # from the repo root
+```
+
+It starts Postgres + Redis, migrates, seeds core company data, boots the API
+with `AUTH_ENABLED=true RATE_LIMIT_ENABLED=true METRICS_ENABLED=true` and fresh
+ephemeral JWT/encryption secrets, then verifies the enforced chain end-to-end:
+
+| Check | Expect | Result |
+|-------|--------|--------|
+| Unauthenticated `GET /api/v1/companies` | `401 auth_required` | ✓ |
+| Bootstrap-admin login | `200` + bearer token | ✓ |
+| Authed `GET /api/v1/companies` | `200` | ✓ |
+| Wrong password login | `403 invalid_credentials` | ✓ |
+| Concurrent load baseline | ≤ 5% fatal-error rate | ✓ (0.00%) |
+| `production_readiness` | PASS on identity/jwt; TLS/ingress WARN | ✓ (11 OK / 4 WARN / 1 FAIL) |
+
+The single FAIL (`SECURE_AUTH_COOKIES` unset) is the *expected* upstream
+finding: the harness runs on plain localhost without a TLS terminator. In a real
+deployment set `SECURE_AUTH_COOKIES=true` behind TLS.
+
+Concurrent load baseline (dev machine, Docker Postgres + in-process workers,
+deterministic MockProvider — **not SLAs**, §42):
+
+```bash
+cd apps/api && .venv/bin/python -m scripts.load_baseline --clients 16 --requests 320
+```
+
+Measured 2026-09-14, 16 clients × 320 requests:
+
+| Route                | Count | p50 (ms) | p95 (ms) | p99 (ms) |
+|----------------------|-------|----------|----------|----------|
+| agents:list          |    40 |      7.6 |     36.5 |     37.3 |
+| companies:list       |   120 |      7.2 |     35.1 |     38.4 |
+| health               |    40 |     24.5 |     56.0 |     58.1 |
+| marketplace:agents   |    40 |      7.3 |     30.5 |     37.3 |
+| metrics              |    40 |      7.4 |     37.1 |     53.1 |
+| recommendations:create |    40 |    7.6 |     54.2 |     55.3 |
+| **ALL**              |   320 |      7.8 |     35.6 |     55.3 |
+
+**Throughput ≈ 1328 req/s; error rate 0.00%.** Most requests returned `401`
+(deliberately unauthenticated — the baseline exercises the enforced token gate,
+not authed reads); the PASS criterion is the 0.00% 5xx/network fatal rate.
+Tune the mix with `--clients`/`--requests`; bounds are indicative dev-machine
+measurements, not contracts.
+
+---
+
 ## 11. Running Tests & Checks
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                    # 1085 tests
+.venv/bin/pytest -q                    # 1115 tests
 .venv/bin/ruff check .                 # lint
 .venv/bin/ruff format --check .        # format
 

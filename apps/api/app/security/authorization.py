@@ -234,6 +234,18 @@ class RoleService:
             if code in existing:
                 continue
             self.db.add(Permission(code=code, description=desc, category=cat, builtin=True))
+        # The platform-admin wildcard must exist as a real Permission row, else
+        # _ensure_role_permissions silently skips the grant and a fresh database
+        # gives the platform_admin role nothing at all.
+        if WILDCARD not in existing:
+            self.db.add(
+                Permission(
+                    code=WILDCARD,
+                    description="Platform administrator (all permissions)",
+                    category="identity",
+                    builtin=True,
+                )
+            )
         self.db.flush()
 
     def seed_system_roles(self) -> None:

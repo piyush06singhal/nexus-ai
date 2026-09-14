@@ -10,3 +10,6 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "live_api: requires OPENAI_API_KEY to run a real vendor round-trip (else skipped)",
+]

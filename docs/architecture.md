@@ -81,8 +81,8 @@ flowchart TD
     end
 
     subgraph AI["🤖 AI Providers"]
-        Mock["MockProvider (deterministic — the ONE real provider, CI/tests, no keys)"]
-        Real["OpenAIProvider (stub, returns canned text — NO real LLM calls yet)"]
+        Mock["MockProvider (deterministic — default, CI/tests, no keys)"]
+        Real["OpenAIProvider (real Chat Completions when OPENAI_API_KEY set; keyless fallback)"]
     end
 
     %% Client → Gateway
@@ -250,7 +250,7 @@ flowchart LR
     subgraph Knowledge["Knowledge & Memory"]
         Memory["MemoryService: 5 types, hybrid retrieval, TTL, extraction"]
         Retrieval["HybridRetriever: semantic+keyword+recency+importance+confidence"]
-        Embedding["EmbeddingProvider: Mock (deterministic) / OpenAI (scaffold)"]
+        Embedding["EmbeddingProvider: Mock (deterministic) / OpenAI (real when keyed)"]
     end
 
     subgraph Reliability["Reliability (Phase 6)"]
@@ -466,7 +466,7 @@ The provider-agnostic model layer:
 - **`types.py`** — shared provider-agnostic payloads (`ChatMessage`, `GenerationOptions`, `ModelResponse`, `TokenUsage`).
 - **`interfaces.py`** — the `ModelProvider` Protocol (`generate`, `stream`, `structured_output`). Logic depends on this interface, never a vendor SDK.
 - **`base.py`** — `BaseModelProvider` with shared default-option plumbing.
-- **`providers/`** — concrete adapters. Phase 0 ships a dependency-free `OpenAIProvider` stub for exercising the seam.
+- **`providers/`** — concrete adapters. `MockProvider` is deterministic and key-free (the default); `OpenAIProvider` is a **real** Chat Completions client (httpx, bounded retry/backoff, keyless fallback) sharing transport with the embeddings provider via `_client.py`. `openai_provider.py`'s constructor reads `settings.openai_api_key`, so registry-built instances activate automatically when a key is set.
 - **`registry.py`** — resolves provider by name (`get_provider("openai")`); the DI seam future execution code will use.
 
 The separation the spec requires is explicit:
@@ -531,7 +531,7 @@ The worker and scheduler are **in-process daemon threads** started in the FastAP
 
 The Phase 4 persistent knowledge layer. It is provider-independent and opt-in: an embedding provider makes semantic search possible, but the system works with keyword matching alone when none is configured.
 
-- **`embedding.py`** — an `EmbeddingProvider` Protocol (`embed`, `dimensions`). `MockEmbeddingProvider` produces deterministic hash-based 128-dim vectors (tests/local, no key, so semantic search is fully exercisable). `OpenAIEmbeddingProvider` is a scaffold reserved for later phases — concrete network calls are intentionally deferred. `get_embedding_provider(settings)` returns a provider only when `memory_embedding_provider` is `"mock"` or `"openai"`, else `None` so retrieval degrades gracefully.
+- **`embedding.py`** — an `EmbeddingProvider` Protocol (`embed`, `dimensions`). `MockEmbeddingProvider` produces deterministic hash-based 128-dim vectors (tests/local, no key, so semantic search is fully exercisable). `OpenAIEmbeddingProvider` calls the real `/embeddings` API over the shared `_client` transport when a key is configured, and falls back to a neutral unit vector keyless or on vendor failure, so semantic search degrades gracefully instead of ever blocking a run. `get_embedding_provider(settings)` returns a provider only when `memory_embedding_provider` is `"mock"` or `"openai"`, else `None` so retrieval degrades gracefully.
 - **`retrieval.py`** — `HybridRetriever.retrieve(query, *, namespace, owner_id, memory_types, top_k, min_score, include_expired, policy)` filters by namespace/owner/type/status (excluding expired), then scores each candidate by weighted **semantic** (cosine when embeddings exist) + **keyword** (Dice coefficient) + **recency** (exponential half-life decay) + **importance** + **confidence**, applies an optional per-type multiplier, and returns the top-k ranked `MemoryRetrievalResult` with a per-result **`breakdown`** for observability.
 - **`policies.py`** — `RetrievalPolicy` (context budget, relevance threshold, max memories, per-type weights) and `WritePolicy` (min importance, dedup threshold, working-memory cap, TTL); plus `is_duplicate` (embedding cosine or same-type+content) and `is_expired` (timezone-safe TTL check).
 - **`extraction.py`** — `extract_memories_from_execution` turns a completed `AgentExecution` into persistent memories: an **episodic** memory always, a **semantic** memory on success+output, a **procedural** memory when tools were used. Content, importance, and confidence are derived from the execution. Memories are embedded in bulk when a provider is present.
@@ -969,11 +969,11 @@ The 22 architecture requirement areas drive NEXUS's long-term design. Each is de
 
 ## 8. Future Architecture (later phases)
 
-- **Phase 1+ (Agent Runtime):** real provider adapters (OpenAI, Anthropic, Gemini, local); structured outputs.
+- **Phase 1+ (Agent Runtime):** the OpenAI adapter is now **real** (Chat Completions + embeddings, keyed via `OPENAI_API_KEY`, keyless fallback). Remaining: Anthropic / Gemini / local adapters, and vendor-native structured outputs (`response_format`).
 - **Phase 2+ (Tool & Action System):** a richer tool set (web fetch/HTTP, file/shell in a sandbox, browser automation), per-agent permission management UI + endpoint, and vendor-native tool-call schema adoption for real providers.
 - **Phase 3+ (Workflow Orchestration):** a visual workflow editor, venue triggers/webhook guards, and richer step types (sub-workflow, parallel fan-out — the sequential engine already returns execution state in dependency order).
-- **Memory:** a real embedding provider (OpenAI scaffold is reserved), a native vector index (pgvector) at scale, richer memory types (structured entities/relations), and working/conversation-scope memory management.
-- **Multi-agent orchestration:** a distributed worker + scheduler (currently runs inline/synchronously), an LLM-driven planner/selector behind the existing protocols, richer planning templates, semantic (non-numeric) conflict resolution, and scale-out of the seven-table orchestration model.
+- **Memory:** embeddings are now **real** (`OpenAIEmbeddingProvider` via the shared `_client` transport, key via `OPENAI_API_KEY`, neutral-vector fallback). Remaining: a native vector index (pgvector) at scale, richer memory types (structured entities/relations), and working/conversation-scope memory management.
+- **Multi-agent orchestration:** a background `OrchestrationWorker` daemon is shipped (opt-in via `ORCHESTRATION_WORKER_ENABLED=true`; atomic `FOR UPDATE SKIP LOCKED` claim, stale-run recovery, mirrors the workflow worker). Remaining: a Redis-backed distributed pool at scale, an LLM-driven planner/selector behind the existing protocols, richer planning templates, semantic (non-numeric) conflict resolution, and scale-out of the seven-table orchestration model.
 - **Phase 11+ (Security, Governance & Production Hardening):** real OS-level process sandboxing for tool execution, Redis-backed worker pools, a managed secrets vault (KMS/HashiCorp) behind the `KeyManager` seam, and TLS termination — all documented deployment items, not claimed implemented. No compliance certifications are claimed.
 
 See [roadmap.md](roadmap.md) for the full phased plan.
