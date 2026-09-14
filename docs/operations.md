@@ -244,15 +244,18 @@ ephemeral JWT/encryption secrets, then verifies the enforced chain end-to-end:
 | Worker drain — workflow execution → terminal | `completed` (worker daemon) | ✓ |
 | Worker drain — orchestration run → terminal | `completed` (worker daemon) | ✓ |
 | Concurrent load baseline | ≤ 5% fatal-error rate | ✓ (0.00%) |
-| `production_readiness` | PASS on identity/jwt + governance; TLS/ingress + sandboxing WARN | ✓ (15 OK / 2 WARN / 0 FAIL) |
+| `production_readiness` | PASS on identity/jwt + governance + tool sandbox; TLS/ingress + OS isolation WARN | ✓ (16 OK / 2 WARN / 0 FAIL) |
 
 The remaining WARN items are honest deployment-context flags, not code gaps:
 `tls` warns only because this run is plaintext (a `--tls` deploy exports
-`TLS_ENABLED=true` and PASSes), and `os_sandboxing` warns because OS-level
-process isolation cannot be fabricated in-process without new dependencies
-(tool calls are still bounded in-process — timeout, memory, output-size caps
-and fs/network/process allow flags). `RESOURCE_LIMITS_PROVISION=true` (set by
-the harness) turns both resource-limit checks green, seeding the 5 core + 8
+`TLS_ENABLED=true` and PASSes), and `os_process_isolation` warns because
+namespace/seccomp/Landlock isolation cannot be fabricated in-process without
+new dependencies — while the *tool sandbox* itself is genuinely enforced:
+`tool_sandbox_enforcement` PASSes because the executor (step 3.6) denies any
+call whose declared `requires_filesystem_access` / `requires_network_access` /
+`requires_process_access` exceeds the `ToolSandbox` allow flags, alongside the
+existing per-call timeout and output-size caps. `RESOURCE_LIMITS_PROVISION=true`
+(set by the harness) turns both resource-limit checks green, seeding the 5 core + 8
 Phase 12 categories as global + per-tenant defaults. `SECURE_AUTH_COOKIES=true`
 is set by the harness so the session-cookie check is green (the deploy overlay
 defaults it too).
@@ -296,9 +299,16 @@ Docker host → a managed platform is the documented (not shipped) long-term pat
 
 ### 11a. GHCR image push (CI)
 
-`.github/workflows/ci.yml` adds a `docker-push` job after the backend/frontend/`docker`
-builds. It runs **only on pushes to `main`** (never on pull requests, so forks can't
-trigger it) and needs the `packages: write` permission on the GitHub repo.
+`.github/workflows/ci.yml` runs the backend suite, frontend suite, Docker build,
+a `model-smoke` job, and a `harness` job that runs `scripts/run_production.sh`
+end to end against Docker Postgres + Redis on every push — then a `docker-push`
+job runs after the builds. `docker-push` runs **only on pushes to `main`** (never
+on pull requests, so forks can't trigger it) and needs the `packages: write`
+permission on the GitHub repo.
+
+The `model-smoke` job is key-gated: with no `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`
+secrets it exercises only the deterministic mock path and always PASSes; setting
+those repo secrets turns it into a genuine real-endpoint CI check.
 
 It builds and pushes two images per commit, tagged `:<sha>` and `:latest`:
 

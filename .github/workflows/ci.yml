@@ -87,6 +87,80 @@ jobs:
           AUTH_ENABLED: "false"
         run: python -m app.checks.production_readiness || true
 
+  # ── Model smoke (key-gated) ──────────────────────────────────────────────
+  # Keyless (secrets absent): providers return deterministic stubs → PASS (mock).
+  # With OPENAI_API_KEY / ANTHROPIC_API_KEY set: exercises real endpoint.
+  model-smoke:
+    name: Model smoke (key-gated)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('apps/api/requirements-dev.txt') }}
+          restore-keys: pip-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Model smoke (keyless or real)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m scripts.smoke_model --provider both
+
+  # ── Production harness (Docker PG+Redis) ────────────────────────────────
+  # Full end-to-end production verification: Docker Postgres + Redis,
+  # alembic migration, auth chain, worker drain, pgvector retrieval,
+  # concurrent load baseline, and readiness report.
+  harness:
+    name: Production harness (Docker PG+Redis)
+    runs-on: ubuntu-latest
+    needs: [backend]
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('apps/api/requirements-dev.txt') }}
+          restore-keys: pip-${{ runner.os }}-
+
+      # The harness requires the deps inside `apps/api/.venv` (it invokes
+      # `.venv/bin/python|alembic` directly), so create the venv here rather
+      # than installing into the system interpreter.
+      - name: Set up venv
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements-dev.txt
+
+      - name: Run production harness
+        working-directory: .
+        run: bash scripts/run_production.sh
+
   # ── Frontend ────────────────────────────────────────────────────────────
   frontend:
     name: Frontend (Node)

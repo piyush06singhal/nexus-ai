@@ -311,6 +311,18 @@ say "production-readiness report:"
 ( cd "$API_DIR" && ENVIRONMENT=production "$VENV_PY" -m app.checks.production_readiness ) \
   || true
 
+# ── 7.5 Model smoke (keyless mock path always PASSes; real path with a key)
+smoke_providers=()
+[[ -n "${OPENAI_API_KEY:-}" ]]  && smoke_providers+=(openai)
+[[ -n "${ANTHROPIC_API_KEY:-}" ]] && smoke_providers+=(anthropic)
+if [[ ${#smoke_providers[@]} -gt 0 ]]; then
+  say "running real-model smoke (${smoke_providers[*]})..."
+  ( cd "$API_DIR" && "$VENV_PY" -m scripts.smoke_model --provider both ) \
+    || die "model smoke failed"
+else
+  say "model smoke: skipped (keyless — mock path covered by tests)"
+fi
+
 cat <<EOF
 
 ────────────────────────────────────────────────────────────────────

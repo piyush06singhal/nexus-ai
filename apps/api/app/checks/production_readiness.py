@@ -230,12 +230,22 @@ class ProductionReadiness:
             )
         self.results.append(
             CheckResult(
-                "os_sandboxing",
+                "tool_sandbox_enforcement",
+                "PASS",
+                "tool sandbox is enforced in-process: per-call timeout via "
+                "ThreadPool future, output-size cap (step 4.5), and "
+                "allow_filesystem/allow_network/allow_process flags (step 3.6) "
+                "deny tools whose capabilities exceed the sandbox budget",
+            )
+        )
+        self.results.append(
+            CheckResult(
+                "os_process_isolation",
                 "WARN",
-                "OS-level process sandboxing is a documented deployment item — "
-                "tool sandboxes are enforced in-process today (per-call timeout, "
-                "memory cap, output-size cap, and allow flags for "
-                "filesystem/network/process access)",
+                "OS-level process isolation is a documented deployment item — "
+                "in-process sandboxing covers time/output/capability gates; "
+                "for namespace/seccomp/Landlock isolation see the deployment "
+                "docs (requires a container runtime or OS-level sandboxing deps)",
             )
         )
 

@@ -68,6 +68,12 @@ class ToolDefinition(BaseModel):
     dangerous: bool = False
     timeout_seconds: float = 30.0
     tags: list[str] = Field(default_factory=list)
+    # Capability declarations — when True the tool performs the named operation
+    # and the executor checks the ToolSandbox allow_* gate before dispatch.
+    # All default False so existing pure-computation tools are unaffected.
+    requires_filesystem_access: bool = False
+    requires_network_access: bool = False
+    requires_process_access: bool = False
 
 
 class ToolResultStatus(StrEnum):

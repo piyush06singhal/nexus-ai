@@ -159,6 +159,40 @@ class ToolExecutor:
             )
             return record
 
+        # 3.6 Enforce sandbox allow-flags: deny tools whose declared capabilities
+        #     exceed the sandbox budget (real in-process enforcement — the allow_*
+        #     flags on ToolSandbox are no longer advisory).
+        _denied_caps: list[str] = []
+        if not sandbox.allow_filesystem and getattr(tool_def, "requires_filesystem_access", False):
+            _denied_caps.append("filesystem")
+        if not sandbox.allow_network and getattr(tool_def, "requires_network_access", False):
+            _denied_caps.append("network")
+        if not sandbox.allow_process and getattr(tool_def, "requires_process_access", False):
+            _denied_caps.append("process")
+        if _denied_caps:
+            result = ToolResult(
+                status=ToolResultStatus.DENIED,
+                error=(
+                    f"Tool '{tool_name}' requires {_denied_caps} access but the sandbox denies it"
+                ),
+            )
+            record = self._persist(
+                tool_name=tool_name,
+                arguments=validated_args,
+                result=result,
+                execution_id=execution_id,
+                iteration=iteration,
+            )
+            logger.warning(
+                "tool_sandbox_allow_denied",
+                extra={
+                    "tool": tool_name,
+                    "denied_capabilities": _denied_caps,
+                    "execution_id": str(execution_id),
+                },
+            )
+            return record
+
         # 4. Execute with timeout
         timeout = sandbox.timeout_seconds
         start = time.monotonic()
