@@ -11,12 +11,12 @@ governance bypass.
 
 | Area | Audit result |
 |------|--------------|
-| Backend tests | 1115 across 104 files, file-backed SQLite + deterministic `MockProvider` (2 `live_api` tests auto-skip keyless) |
+| Backend tests | 1192 across 112 files (file-backed SQLite + deterministic `MockProvider`; 3 skips: 2 `live_api` keyless + 1 pgvector PostgreSQL-only) |
 | Frontend tests | 141 (vitest) |
 | Lint / format | `ruff check` + `ruff format --check` clean |
 | Typecheck / build | `tsc --noEmit` clean; Next.js 16 production build clean |
 | TODO/FIXME | Zero markers in `apps/api/app` and `apps/web/src` |
-| Alembic head | `0014_phase12_sim_opt_mkt` (26-char revision); round-trip proven |
+| Alembic head | `0015_pgvector` (adds pgvector semantic-memory column + HNSW index; round-trip proven) |
 | Object store / infra audit | Postgres 16 + Redis 7 + API + Web compose stack with healthchecks |
 
 ## 2. Critical Fixes Delivered in This Pass

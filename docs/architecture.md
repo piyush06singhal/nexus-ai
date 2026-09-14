@@ -77,7 +77,7 @@ flowchart TD
     subgraph Data["💾 Data Layer"]
         PG["PostgreSQL 16 (156 tables, company_id FK + index on every tenant table)"]
         Redis["Redis 7 (optional, future cache/queues)"]
-        Alembic["Alembic (head: 0014_phase12_sim_opt_mkt)"]
+        Alembic["Alembic (head: 0015_pgvector)"]
     end
 
     subgraph AI["🤖 AI Providers"]
@@ -355,7 +355,7 @@ flowchart LR
 
 ---
 
-## 3. Overview
+## 2c. Overview
 
 NEXUS is an **Autonomous AI Workforce & Company OS**. The eventual product lets a user state a business objective and have a coordinated system of AI agents plan, execute, verify, and report on work — using external tools, memory, and controlled data.
 
@@ -371,7 +371,7 @@ The engineering goal for the whole project is captured in a few principles:
 
 ---
 
-## 2. High-Level System Diagram
+## 2b. High-Level System Diagram
 
 ```
                          ┌─────────────────────────────┐
@@ -459,7 +459,7 @@ FastAPI application with:
 - **Security & governance** (`app/security/`, added in Phase 11) — the enforcement layer that *composes* Phases 0–10; see §3.15.
 - **Production readiness** (`app/checks/production_readiness.py`, added in Phase 11) — `python -m app.checks.production_readiness` prints PASS/WARN/FAIL and FAILs a production environment that lacks auth/encryption keys.
 
-### 3.3 AI Abstraction (`app/api/app/ai/`)
+### 3.3 AI Abstraction (`app/ai/`)
 
 The provider-agnostic model layer:
 
@@ -824,7 +824,7 @@ Phase 0 created a minimal `agents` stub. Phase 1 expanded it and added the runti
 
 Enums are stored as plain VARCHAR values (e.g. `active`, `completed`, `running`, `episodic`, `pass`, `recovered`, `pending_review`, `mitigating`) via the ORM (`native_enum=False`, `values_callable`) so the DB columns match the migration's `String` columns and stay portable across PostgreSQL and the SQLite test DB. Boolean server defaults use `sa.true()` for PostgreSQL compatibility.
 
-Planned for later phases (not yet created): `users`, `missions`, `approvals`.
+`identities`, `users`, and `approval_gates` now exist (Phases 9 & 11); a standalone `approvals` table (distinct from `approval_gates`) remains uncreated.
 
 These arrive incrementally; none are created prematurely. (`evaluations` was created early in Phase 6 to support the evaluation framework; the capability-holding `approvals` type remains deferred, gated by `/escalations`.)
 

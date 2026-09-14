@@ -426,7 +426,7 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                    # 1182 tests + 3 keyless/pgvector skips (skips resolved on a live Postgres)
+.venv/bin/pytest -q                    # 1192 tests + 3 keyless/pgvector skips (skips resolved on a live Postgres)
 .venv/bin/ruff check .                 # lint
 .venv/bin/ruff format --check .        # format
 
