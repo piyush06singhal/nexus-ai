@@ -126,3 +126,57 @@ jobs:
 
       - name: Build Web image
         run: docker build -f infrastructure/docker/Dockerfile.web -t nexus-web .
+
+  # ── Docker push (GHCR) — production deploy images ───────────────────────
+  # On every push to main, publish the api+web images to GitHub Container
+  # Registry so `scripts/deploy.sh` can pull and run them on any Docker host.
+  # Gated to *pushes to main* (not pull_requests), so forks never trigger it;
+  # publishing needs the packages:write permission, which the repo opts into.
+  # `GHCR_TOKEN` (optional) overrides the default GITHUB_TOKEN for hosts that
+  # want a dedicated registry credential.
+  docker-push:
+    name: Push images to GHCR
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_BASE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+
+      - name: Build and push API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.api
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}/nexus-api:${{ github.sha }}
+            ${{ env.IMAGE_BASE }}/nexus-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.web
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}/nexus-web:${{ github.sha }}
+            ${{ env.IMAGE_BASE }}/nexus-web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,47 @@
+# NEXUS production-deploy overlay.
+#
+# Runs the API + web from PREBUILT GHCR images (pushed by CI on pushes to
+# main) instead of building from source, with the hardened chain enabled:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# or via the one-command helper:
+#
+#     bash scripts/deploy.sh [TAG]        # TAG defaults to "latest"
+#
+# Secret policy: nothing is hardcoded. Secrets and keys are read from the
+# host environment (real deployments use a secret manager): compose REQUIRES
+# JWT_SECRET_KEY and SECRET_ENCRYPTION_KEY and fails fast if either is unset.
+# API keys are optional — without them the platform runs deterministic/keyless.
+
+services:
+  api:
+    # Replace the base "build:" with a pulled image (Compose !reset clears it).
+    build: !reset null
+    image: ${NEXUS_IMAGE_REPO:-piyush06singhal/nexus-ai}/nexus-api:${IMAGE_TAG:-latest}
+    environment:
+      ENVIRONMENT: production
+      # Hardened chain on by default for production deployments.
+      AUTH_ENABLED: "true"
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_BACKEND: "redis"
+      WORKFLOW_WORKER_ENABLED: "true"
+      ORCHESTRATION_WORKER_ENABLED: "true"
+      LOGGING_JSON: "true"
+      SECURE_AUTH_COOKIES: ${SECURE_AUTH_COOKIES:-true}
+      # Mandatory secrets — compose errors until these are provided.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required for production}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required for production}
+      # CORS pinned to the real frontend origin in production.
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      # Optional real-model keys — leave unset for keyless deterministic mode.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # (Postgres/Redis URLs, ports, healthchecks and depends_on are inherited
+      # from the base docker-compose.yml.)
+
+  web:
+    build: !reset null
+    image: ${NEXUS_IMAGE_REPO:-piyush06singhal/nexus-ai}/nexus-web:${IMAGE_TAG:-latest}
+    environment:
+      API_BASE_URL: http://api:8000

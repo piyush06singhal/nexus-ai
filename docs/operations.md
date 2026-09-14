@@ -99,7 +99,9 @@ Docker Compose healthchecks use the unauthenticated `/ready` endpoint.
 - **Queue**: `workflow_queue` table (DB-as-queue)
 - **Worker**: `app/workflow/worker.py` — claims `queued` executions, runs them
 - **Scheduler**: `app/workflow/scheduler.py` — fires due triggers
-- **Env**: `ORCHESTRATION_EXECUTE_SYNC=false` (async worker); `true` for inline tests
+- **Env**: `WORKFLOW_WORKER_ENABLED` / `ORCHESTRATION_WORKER_ENABLED` (daemon worker
+  threads; `true` in production mode), `ORCHESTRATION_EXECUTE_SYNC=false` (async);
+  `true` for inline tests
 - **Reliability**: `IDEMPOTENCY_ENABLED`, `DLQ_ENABLED`, heartbeat (`WORKER_HEARTBEAT_INTERVAL_SECONDS=5`), staleness (`WORKER_STALE_THRESHOLD_SECONDS=120`), retries (`WORKER_MAX_RETRIES=3`)
 
 ---
@@ -129,6 +131,8 @@ Key env vars (see `.env.example` for full list):
 | Security | `SSRF_PROTECTION_ENABLED`, `PROMPT_INJECTION_PROTECTION_ENABLED`, `SECURE_AUTH_COOKIES` |
 | Governance | `KILL_SWITCH_GLOBAL_PAUSE`, `APPROVAL_*`, `RESOURCE_MAX_*` |
 | Feature Flags | `FEATURE_FLAGS_ENABLED`, `FEATURE_*` |
+| Rate limiting | `RATE_LIMIT_ENABLED`, `RATE_LIMIT_BACKEND` (`memory` per-process, `redis` cross-process ZSET — degrades to memory on outage), `RATE_LIMIT_*_PER_MINUTE` |
+| Workers | `WORKFLOW_WORKER_ENABLED`, `ORCHESTRATION_WORKER_ENABLED`, `ORCHESTRATION_*` |
 | External | `EXTERNAL_*` (timeouts, caps, SSRF, connectors) |
 | Phase 12 | No dedicated env — governed by Phase 11 budgets |
 
@@ -179,33 +183,41 @@ ephemeral JWT/encryption secrets, then verifies the enforced chain end-to-end:
 | Bootstrap-admin login | `200` + bearer token | ✓ |
 | Authed `GET /api/v1/companies` | `200` | ✓ |
 | Wrong password login | `403 invalid_credentials` | ✓ |
+| Worker drain — workflow execution → terminal | `completed` (worker daemon) | ✓ |
+| Worker drain — orchestration run → terminal | `completed` (worker daemon) | ✓ |
 | Concurrent load baseline | ≤ 5% fatal-error rate | ✓ (0.00%) |
-| `production_readiness` | PASS on identity/jwt; TLS/ingress WARN | ✓ (11 OK / 4 WARN / 1 FAIL) |
+| `production_readiness` | PASS on identity/jwt; TLS/ingress WARN | ✓ (13 OK / 3 WARN / 0 FAIL) |
 
-The single FAIL (`SECURE_AUTH_COOKIES` unset) is the *expected* upstream
-finding: the harness runs on plain localhost without a TLS terminator. In a real
-deployment set `SECURE_AUTH_COOKIES=true` behind TLS.
+The 3 WARN items are the documented upstream flags (TLS terminated by a load
+balancer, OS-level sandboxing, per-tenant resource-limit tuning) that only a real
+deployment host resolves. `SECURE_AUTH_COOKIES=true` is set by the harness so the
+session-cookie check is green (the deploy overlay defaults it too).
 
-Concurrent load baseline (dev machine, Docker Postgres + in-process workers,
-deterministic MockProvider — **not SLAs**, §42):
+The harness runs against an **isolated per-run Postgres schema** (created and
+dropped per run) so a stale bootstrap admin or schema from a previous run can
+never poison the checks; export `DATABASE_URL` to point the smoke at your own
+database instead.
+
+Concurrent load baseline (dev machine, Docker Postgres + Redis-backed rate
+limiter + in-process workers, deterministic MockProvider — **not SLAs**, §42):
 
 ```bash
 cd apps/api && .venv/bin/python -m scripts.load_baseline --clients 16 --requests 320
 ```
 
-Measured 2026-09-14, 16 clients × 320 requests:
+Measured 2026-09-14, 16 clients × 320 requests (RATE_LIMIT_BACKEND=redis):
 
 | Route                | Count | p50 (ms) | p95 (ms) | p99 (ms) |
 |----------------------|-------|----------|----------|----------|
-| agents:list          |    40 |      7.6 |     36.5 |     37.3 |
-| companies:list       |   120 |      7.2 |     35.1 |     38.4 |
-| health               |    40 |     24.5 |     56.0 |     58.1 |
-| marketplace:agents   |    40 |      7.3 |     30.5 |     37.3 |
-| metrics              |    40 |      7.4 |     37.1 |     53.1 |
-| recommendations:create |    40 |    7.6 |     54.2 |     55.3 |
-| **ALL**              |   320 |      7.8 |     35.6 |     55.3 |
+| agents:list          |    40 |     10.3 |     21.7 |     29.2 |
+| companies:list       |   120 |     11.3 |     21.9 |     43.9 |
+| health               |    40 |     45.9 |     68.6 |     91.5 |
+| marketplace:agents   |    40 |     11.6 |     25.7 |     41.7 |
+| metrics              |    40 |     12.6 |     43.4 |     44.2 |
+| recommendations:create |    40 |    12.7 |     31.7 |     44.8 |
+| **ALL**              |   320 |     12.7 |     47.0 |     57.9 |
 
-**Throughput ≈ 1328 req/s; error rate 0.00%.** Most requests returned `401`
+**Throughput ≈ 915 req/s; error rate 0.00%.** Most requests returned `401`
 (deliberately unauthenticated — the baseline exercises the enforced token gate,
 not authed reads); the PASS criterion is the 0.00% 5xx/network fatal rate.
 Tune the mix with `--clients`/`--requests`; bounds are indicative dev-machine
@@ -213,11 +225,91 @@ measurements, not contracts.
 
 ---
 
-## 11. Running Tests & Checks
+## 11. Deployment
+
+Three-part path: **CI pushes GHCR images → `scripts/deploy.sh` runs them on any
+Docker host → a managed platform is the documented (not shipped) long-term path.**
+
+### 11a. GHCR image push (CI)
+
+`.github/workflows/ci.yml` adds a `docker-push` job after the backend/frontend/`docker`
+builds. It runs **only on pushes to `main`** (never on pull requests, so forks can't
+trigger it) and needs the `packages: write` permission on the GitHub repo.
+
+It builds and pushes two images per commit, tagged `:<sha>` and `:latest`:
+
+| Image          | Tag pattern                                             |
+|----------------|---------------------------------------------------------|
+| `nexus-api`    | `ghcr.io/<owner>/<repo>/nexus-api:<sha>` + `:latest`    |
+| `nexus-web`    | `ghcr.io/<owner>/<repo>/nexus-web:<sha>` + `:latest`    |
+
+Login uses `GITHUB_TOKEN` by default; a repo may set `GHCR_TOKEN` to use a
+dedicated registry credential. `--cache-from/to: type=gha` reuses the GitHub
+Actions cache across runs.
+
+### 11b. `scripts/deploy.sh` — one-command deploy
+
+On any Docker host with the repo checked out (no source build needed):
+
+```bash
+bash scripts/deploy.sh [--dry-run] [TAG] [IMAGE-REPO]
+```
+
+- `--dry-run` prints what would be deployed (tag, repo, whether the two secret
+  keys are present) and exits without touching Docker.
+- `TAG` defaults to `latest`; pass a git SHA (e.g. `49874a1`) to pin an exact
+  revision.
+- `IMAGE-REPO` defaults to the repo of the `origin` git remote
+  (`github.com/<owner>/<repo>.git`) and can be overridden with `NEXUS_IMAGE_REPO`.
+
+The script:
+
+1. Requires `JWT_SECRET_KEY` and `SECRET_ENCRYPTION_KEY`. If either is unset it
+   generates **ephemeral** ones and warns loudly — those invalidate sessions on
+   the next restart, so real deployments set them from a secret manager
+   (nothing is ever written to disk by the script).
+2. `docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api web`
+3. `docker compose ... up -d` — boots the prod overlay (below).
+4. Polls the API container healthcheck (30 × 5 s) and fails with a hint if it
+   never turns healthy.
+
+### 11c. `docker-compose.prod.yml` — production overlay
+
+Overlay on the base `docker-compose.yml`:
+
+- **Prebuilt images, no build**: `build: !reset null` clears the base `build:`
+  keys and swaps in the pulled GHCR images (`NEXUS_IMAGE_REPO`/`IMAGE_TAG`
+  template vars, both defaulting for a local `.env`).
+- **Hardened chain on by default**: `AUTH_ENABLED=true`,
+  `RATE_LIMIT_ENABLED=true`, `RATE_LIMIT_BACKEND=redis`,
+  `WORKFLOW_WORKER_ENABLED=true`, `ORCHESTRATION_WORKER_ENABLED=true`,
+  `LOGGING_JSON=true`, `SECURE_AUTH_COOKIES=true`.
+- **Mandatory secrets**: `${JWT_SECRET_KEY:?}` / `${SECRET_ENCRYPTION_KEY:?}`
+  make compose fail fast until real keys are exported.
+- **Optional model keys**: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` pass through;
+  leave unset for keyless deterministic mode.
+- **Pinned CORS** to the real frontend origin (`CORS_ORIGINS`), overriding the
+  dev default.
+- Postgres/Redis URLs, ports, healthchecks and `depends_on` are **inherited
+  unchanged** from the base file.
+
+### 11d. Managed deployment path (documented, not shipped)
+
+For horizontal replication, TLS termination, managed Postgres with PITR and
+auto-failover, the documented targets are a PaaS in the Fly.io/render family or
+a managed Postgres provider. **No such config files are shipped in this repo** —
+they are per-account files that encode an account token / platform-specific
+settings, so generating them is the deployer's step, from the base image + the
+production env above. See §4 (backups) and §13 (readiness gate) for what those
+runs inherit.
+
+---
+
+## 12. Running Tests & Checks
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                    # 1115 tests
+.venv/bin/pytest -q                    # 1123 tests
 .venv/bin/ruff check .                 # lint
 .venv/bin/ruff format --check .        # format
 
@@ -233,7 +325,7 @@ bash scripts/run_demos.sh              # docker PG/Redis + 5 seeds + smoke
 
 ---
 
-## 12. Production Readiness Gate
+## 13. Production Readiness Gate
 
 ```bash
 # From apps/api
@@ -250,7 +342,7 @@ Set these in production `.env` to pass.
 
 ---
 
-## 13. References
+## 14. References
 
 | Doc | Scope |
 |-----|-------|

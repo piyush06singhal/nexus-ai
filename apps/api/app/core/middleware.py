@@ -115,35 +115,57 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """In-memory sliding-window rate limiter (per ip + route class).
+    """Sliding-window rate limiter (per ip + route class).
 
-    Inert unless ``rate_limit_enabled``. Windows are deque timestamps per key
-    capped at the class limit; excess requests return a 429 error envelope.
+    Inert unless ``rate_limit_enabled``. Default backend is in-memory deque
+    timestamps per key capped at the class limit; with
+    ``rate_limit_backend = "redis"`` the window moves to a shared Redis ZSET
+    (see :mod:`app.core.ratelimit`). Excess requests return a 429 envelope.
     """
 
     def __init__(self, app):
         super().__init__(app)
         self._traffic: dict[tuple[str, str], deque] = defaultdict(deque)
+        # Tier A: a Redis-backed (cross-process) backend is opt-in. The
+        # injectable seam is only exercised when RATE_LIMIT_BACKEND=redis.
+        self._limiter = None
+        if settings.rate_limit_backend == "redis":
+            from app.core.ratelimit import RedisRateLimiter
+
+            self._limiter = RedisRateLimiter()
+
+    @staticmethod
+    def _rate_limited() -> JSONResponse:
+        return JSONResponse(
+            status_code=429,
+            content=_error_envelope(
+                NexusError(
+                    "Rate limit exceeded. Try again shortly.",
+                    code="rate_limited",
+                )
+            ),
+        )
 
     async def dispatch(self, request: Request, call_next):
         if not settings.rate_limit_enabled:
             return await call_next(request)
-        key = (self._client_ip(request), self._class(request))
+        ip = self._client_ip(request)
+        route_class = self._class(request)
+
+        if self._limiter is not None:
+            # Redis-backed window (degrades to memory on Redis outage).
+            if not await self._limiter.allow(ip, route_class, self._class_limit(request)):
+                return self._rate_limited()
+            return await call_next(request)
+
+        key = (ip, route_class)
         bucket = self._traffic[key]
         now = time.monotonic()
         window = 60.0
         while bucket and now - bucket[0] > window:
             bucket.popleft()
         if len(bucket) >= self._class_limit(request):
-            return JSONResponse(
-                status_code=429,
-                content=_error_envelope(
-                    NexusError(
-                        "Rate limit exceeded. Try again shortly.",
-                        code="rate_limited",
-                    )
-                ),
-            )
+            return self._rate_limited()
         bucket.append(now)
         return await call_next(request)
 

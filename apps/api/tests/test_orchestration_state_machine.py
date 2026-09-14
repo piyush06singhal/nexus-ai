@@ -40,6 +40,18 @@ def test_normal_lifecycle_path_is_valid():
         assert transition_orchestration(current, nxt) == nxt
 
 
+def test_claimed_running_rewinds_to_planning():
+    # OrchestrationWorker claims a CREATED row by moving it to RUNNING, then
+    # hands it to Orchestrator.execute which begins machine execution at
+    # PLANNING. That re-entry must be a legal edge (regression: it was not,
+    # so any worker-drained run died with an Illegal transition error).
+    assert orchestration_can_transition(OrchestrationStatus.RUNNING, OrchestrationStatus.PLANNING)
+    assert (
+        transition_orchestration(OrchestrationStatus.RUNNING, OrchestrationStatus.PLANNING)
+        == OrchestrationStatus.PLANNING
+    )
+
+
 def test_running_to_terminal_statuses():
     assert orchestration_can_transition(OrchestrationStatus.RUNNING, OrchestrationStatus.FAILED)
     assert orchestration_can_transition(

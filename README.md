@@ -278,7 +278,7 @@ The layer-by-layer engineering reference and the responsibility-boundary diagram
 
 Straight answer, no spin:
 
-- ✅ **The pipeline is real and fully wired.** Data flows end-to-end: Web UI → Next.js proxy → FastAPI → PostgreSQL. Storage, retrieval, execution records, approvals, audit chains, KPIs, benchmarks — all real database-backed operations, all verified by 1115 backend tests + 141 frontend tests.
+- ✅ **The pipeline is real and fully wired.** Data flows end-to-end: Web UI → Next.js proxy → FastAPI → PostgreSQL. Storage, retrieval, execution records, approvals, audit chains, KPIs, benchmarks — all real database-backed operations, all verified by 1123 backend tests + 141 frontend tests.
 - ✅ **It runs on a stranger's machine.** Verified by cold-starting from empty volumes: `docker compose up` on a clean checkout auto-migrates 156 tables and seeds live demo data, with every UI page responding HTTP 200.
 - ⚠️ **The intelligence is deterministic by default, real when you opt in.** All agent/tool/workflow "thinking" runs on the `MockProvider` (deterministic, needs no API key) unless `OPENAI_API_KEY` is set — then the **real `OpenAIProvider`** makes actual Chat Completions calls (bounded timeout, exponential-backoff retries, token metrics), and `OpenAIEmbeddingProvider` calls real embeddings, with graceful keyless fallback so a stranger's machine never breaks. Set `memory_embedding_provider=openai` in `.env` to enable semantic embeddings.
 - ⚠️ **It is a development/demo platform, not a live production deployment.** Auth is off by default (`AUTH_ENABLED=false`), there's no TLS, single host, and no compliance certifications or SLAs are claimed. The `production_readiness` check intentionally FAILs until those are configured.
@@ -409,7 +409,7 @@ deliberately-failing items (`python -m app.checks.production_readiness`).
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                                # 1115 tests across 104 files
+.venv/bin/pytest -q                                # 1123 tests across 105 files
 .venv/bin/ruff check app tests scripts
 .venv/bin/ruff format --check app tests scripts
 
@@ -447,7 +447,7 @@ nexus-ai/
 │   │   │   └── checks/     # production_readiness
 │   │   ├── alembic/        # migrations (0014 = Phase 12 head)
 │   │   ├── scripts/        # 5 seeds, smoke_api, perf_baseline
-│   │   └── tests/          # 1115 tests (SQLite, MockProvider)
+│   │   └── tests/          # 1123 tests (SQLite, MockProvider)
 │   └── web/        # Next.js frontend (approvals, settings, phase-12 centers, shells)
 │       ├── src/app/
 │       ├── src/components/

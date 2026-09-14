@@ -17,6 +17,9 @@ from app.orchestration.types import InvalidTransitionError
 # Orchestration lifecycle.
 # Normal path: created → planning → planned → assigning → running →
 #              synthesizing → completed.
+# Worker path: created → running (atomic claim by OrchestrationWorker) →
+#              planning → … — the claim reserves the row off the queue, then
+#              machine execution re-enters from PLANNING.
 # Failure/partial/cancel: running → failed | partially_completed | cancelled.
 _ORCHESTRATION_TRANSITIONS: dict[OrchestrationStatus, set[OrchestrationStatus]] = {
     OrchestrationStatus.CREATED: {OrchestrationStatus.PLANNING, OrchestrationStatus.CANCELLED},
@@ -24,6 +27,7 @@ _ORCHESTRATION_TRANSITIONS: dict[OrchestrationStatus, set[OrchestrationStatus]] 
     OrchestrationStatus.PLANNED: {OrchestrationStatus.ASSIGNING, OrchestrationStatus.FAILED},
     OrchestrationStatus.ASSIGNING: {OrchestrationStatus.RUNNING, OrchestrationStatus.FAILED},
     OrchestrationStatus.RUNNING: {
+        OrchestrationStatus.PLANNING,
         OrchestrationStatus.SYNTHESIZING,
         OrchestrationStatus.FAILED,
         OrchestrationStatus.PARTIALLY_COMPLETED,

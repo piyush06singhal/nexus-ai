@@ -207,8 +207,12 @@ class Settings(BaseSettings):
         }
     )
     max_request_body_bytes: int = 2_000_000  # 2 MiB default body cap
-    # Rate limiting (sliding window in-memory; DB-backed rate_limit_records too).
+    # Rate limiting (sliding window; DB-backed rate_limit_records too).
     rate_limit_enabled: bool = False
+    # Backend: "memory" (per-process) or "redis" (cross-process ZSET window,
+    # shared across replicas). Redis errors degrade to the memory window so an
+    # outage never surfaces as a 5xx.
+    rate_limit_backend: Literal["memory", "redis"] = "memory"
     rate_limit_default_per_minute: int = 600
     rate_limit_auth_per_minute: int = 20  # stricter for /auth/* (lockout protection)
     rate_limit_external_per_minute: int = 120
