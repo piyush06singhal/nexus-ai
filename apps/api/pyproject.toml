@@ -12,4 +12,5 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "live_api: requires OPENAI_API_KEY to run a real vendor round-trip (else skipped)",
+    "pgvector: requires PostgreSQL with the pgvector extension (skipped on SQLite)",
 ]

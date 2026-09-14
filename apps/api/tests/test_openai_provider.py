@@ -40,6 +40,53 @@ def _chat_response(content: str = "hello back") -> dict:
     }
 
 
+def _chat_completion_chunk(text: str, *, finish_reason: str = "stop") -> dict:
+    """One OpenAI chat.completion.chunk frame (token content or a finish)."""
+    return {
+        "id": "chatcmpl-s1",
+        "object": "chat.completion.chunk",
+        "model": "gpt-4o-mini",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"content": text} if text else {},
+                "finish_reason": finish_reason if not text else None,
+            }
+        ],
+    }
+
+
+def _sse_stream(text: str, *, finish_reason: str = "stop", with_usage: bool = True) -> str:
+    """Build an OpenAI streaming ``text/event-stream`` body.
+
+    The text is split into deterministic 3-char deltas so the test can assert
+    that tokens arrive in order and piece back together exactly.
+    """
+    frames = []
+    for i in range(0, len(text), 3):
+        chunk = text[i : i + 3]
+        frames.append("data: " + json.dumps(_chat_completion_chunk(chunk)) + "\n")
+    frames.append(
+        "data: " + json.dumps(_chat_completion_chunk("", finish_reason=finish_reason)) + "\n"
+    )
+    if with_usage:
+        frames.append(
+            "data: "
+            + json.dumps(
+                {
+                    "id": "chatcmpl-s1",
+                    "object": "chat.completion.chunk",
+                    "model": "gpt-4o-mini",
+                    "choices": [],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                }
+            )
+            + "\n"
+        )
+    frames.append("data: [DONE]\n\n")
+    return "".join(frames)
+
+
 def test_keyless_fallback_is_deterministic():
     provider = OpenAIProvider(api_key="")
     r1 = provider.generate(MESSAGES)
@@ -132,12 +179,99 @@ def test_generate_4xx_raises_request_error_no_retry():
 
 
 def test_stream_contract():
+    """Native SSE streaming: tokens arrive in order and reassemble exactly."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=_chat_response("two words"))
+        return httpx.Response(
+            200,
+            text=_sse_stream("two words"),
+            headers={"content-type": "text/event-stream"},
+        )
 
     provider = OpenAIProvider(api_key=KEY, transport=httpx.MockTransport(handler), max_retries=2)
     parts = list(provider.stream(MESSAGES))
-    assert "".join(parts).strip() == "two words"
+    assert "".join(parts) == "two words"
+
+
+def test_stream_requests_native_streaming():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            text=_sse_stream("hello back"),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    provider = OpenAIProvider(api_key=KEY, transport=httpx.MockTransport(handler), max_retries=2)
+    assert "".join(provider.stream(MESSAGES)) == "hello back"
+    assert captured["body"]["stream"] is True
+    assert captured["body"]["stream_options"] == {"include_usage": True}
+
+
+def test_stream_accumulates_usage(monkeypatch):
+    recorded: list[tuple] = []
+    import app.ai.providers.openai_provider as provider_mod
+
+    monkeypatch.setattr(
+        provider_mod,
+        "model_tokens",
+        lambda model, prompt, complet: recorded.append((model, prompt, complet)),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text=_sse_stream("hi there"),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    provider = OpenAIProvider(api_key=KEY, transport=httpx.MockTransport(handler), max_retries=2)
+    assert "".join(provider.stream(MESSAGES)) == "hi there"
+    # Usage frame arrives after the finish_reason chunk; prompt/completion are
+    # recorded into the metrics registry.
+    assert recorded == [("gpt-4o-mini", 10, 5)]
+
+
+def test_stream_retries_429_then_streams():
+    attempts: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request)
+        if len(attempts) == 1:
+            return httpx.Response(429, json={"error": {"message": "rate limited"}})
+        return httpx.Response(
+            200,
+            text=_sse_stream("recovered"),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    provider = OpenAIProvider(
+        api_key=KEY, transport=httpx.MockTransport(handler), max_retries=2, retry_backoff=0.0
+    )
+    assert "".join(provider.stream(MESSAGES)) == "recovered"
+    assert len(attempts) == 2  # connect-time retry still applies
+
+
+def test_stream_4xx_raises_request_error_no_retry():
+    attempts: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request)
+        return httpx.Response(400, json={"error": {"message": "bad request"}})
+
+    provider = OpenAIProvider(api_key=KEY, transport=httpx.MockTransport(handler), max_retries=2)
+    with pytest.raises(OpenAIRequestError) as exc_info:
+        list(provider.stream(MESSAGES))
+    assert exc_info.value.status == 400
+    assert len(attempts) == 1
+
+
+def test_stream_keyless_fallback_yields_canned_text():
+    provider = OpenAIProvider(api_key="")
+    parts = list(provider.stream(MESSAGES))
+    assert "".join(parts).strip().startswith("[stub:openai]")
 
 
 def test_native_tool_calls_map_to_runtime_shape():

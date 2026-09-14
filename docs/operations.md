@@ -43,9 +43,10 @@ npm run dev
 
 ## 3. Database Migrations
 
-- Alembic head: `0014_phase12_sim_opt_mkt` (26-char revision)
+- Alembic head: `0015_pgvector` (adds the pgvector semantic-memory column; see *pgvector semantic memory* §Migration below)
 - Env-driven: `alembic/env.py` reads `settings.database_url` from `DATABASE_URL`
 - Round-trip tested in CI: `upgrade head` → `downgrade base` → `upgrade head`
+- PostgreSQL-only revisions: `0015_pgvector` runs `CREATE EXTENSION vector` + adds `memories.embedding_vector vector(1536)` (+ HNSW index) **only on the `postgresql` dialect** — it is a no-op on SQLite, so `alembic upgrade head` on SQLite (tests/dev) stays green. The dev/CI Postgres uses the `pgvector/pgvector` Docker image so the extension is present.
 - Seed order (dependency-ordered):
   1. `seed_company`
   2. `seed_autonomous_startup`
@@ -309,9 +310,13 @@ runs inherit.
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                    # 1123 tests
+.venv/bin/pytest -q                    # 1138 tests + 4 keyless skips
 .venv/bin/ruff check .                 # lint
 .venv/bin/ruff format --check .        # format
+
+# pgvector semantic-memory test (PostgreSQL only; skipped on SQLite)
+PGVECTOR_TEST_DATABASE_URL='postgresql+psycopg://nexus:nexus_dev@localhost:5433/nexus' \
+  .venv/bin/pytest tests/test_pgvector.py
 
 # Frontend (from apps/web)
 npx tsc --noEmit

@@ -23,7 +23,7 @@ from typing import Any
 
 from app.ai.interfaces import ModelProvider
 from app.ai.providers.mock_provider import MockProvider
-from app.ai.registry import get_provider
+from app.ai.registry import get_provider, list_providers
 from app.ai.types import GenerationOptions
 from app.core.errors import NotFoundError, ServiceUnavailableError, ValidationError
 from app.core.logging import get_logger
@@ -54,6 +54,24 @@ def _json_object(raw: str | None) -> dict[str, Any]:
     except (ValueError, TypeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _split_provider_prefix(provider: str, model_name: str) -> tuple[str, str]:
+    """Resolve an optional ``<provider>/<model>`` prefix on ``model_name``.
+
+    The subagent-prefix protocol lets one agent definition express a
+    provider-specific model — e.g. ``"anthropic/claude-sonnet-5"`` — even when
+    its DB ``provider`` field carries the platform default. When the prefix is
+    an exact registered provider name other than ``mock``, it wins as the
+    effective provider and the prefix is stripped from the model passed to the
+    API. Unknown prefixes and ``mock/...`` are returned unchanged so the mock
+    path and existing model names (which contain no ``/``) are untouched.
+    """
+    if "/" in model_name:
+        prefix, _, base = model_name.partition("/")
+        if base and prefix in list_providers() and prefix != MockProvider.name:
+            return prefix, base
+    return provider, model_name
 
 
 # Fallback pricing used to estimate cost when a provider doesn't supply it.
@@ -93,15 +111,18 @@ class AgentRuntime:
 
         An explicitly injected provider (tests) always wins. Otherwise the
         provider is resolved from the agent's ``provider`` name via the
-        registry. The mock provider additionally honors optional keys in
-        ``agent.model_params`` so a scripted tool-call sequence can be driven
-        end-to-end over the HTTP API: ``script`` (ordered list of responses) or
-        ``reply`` (single fixed response).
+        registry, honoring a ``<provider>/<model>`` prefix on
+        ``agent.model_name`` (see :func:`_split_provider_prefix`). The mock
+        provider additionally honors optional keys in ``agent.model_params`` so
+        a scripted tool-call sequence can be driven end-to-end over the HTTP
+        API: ``script`` (ordered list of responses) or ``reply`` (single fixed
+        response).
         """
         if self._provider is not None:
             return self._provider
 
-        if agent.provider == MockProvider.name:
+        provider_name, _ = _split_provider_prefix(agent.provider, agent.model_name)
+        if agent.provider == MockProvider.name and provider_name == MockProvider.name:
             params = _json_object(agent.model_params)
             kwargs: dict[str, object] = {}
             script = params.get("script")
@@ -111,7 +132,7 @@ class AgentRuntime:
                 kwargs["reply"] = str(params["reply"])
             return MockProvider(**kwargs)
 
-        return get_provider(agent.provider)
+        return get_provider(provider_name)
 
     def execute_task(self, task_id) -> AgentExecution:
         """Execute the given task with its assigned agent and persist the result.
@@ -142,8 +163,11 @@ class AgentRuntime:
         self._executions._db.commit()
         self._tasks.mark_in_progress(task.id)
 
+        # The provider may have been resolved from a "<provider>/<model>"
+        # prefix on model_name — pass the stripped model to the API.
+        _, model_name = _split_provider_prefix(agent.provider, agent.model_name)
         options = GenerationOptions(
-            model=agent.model_name,
+            model=model_name,
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
         )

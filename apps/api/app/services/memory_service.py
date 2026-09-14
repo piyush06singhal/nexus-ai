@@ -26,6 +26,7 @@ from app.db.models.memory import (
 )
 from app.memory.embedding import EmbeddingProvider
 from app.memory.extraction import extract_memories_from_execution
+from app.memory.pgvector import sync_vector
 from app.memory.policies import WritePolicy, is_duplicate
 from app.memory.retrieval import HybridRetriever
 from app.schemas.memory import MemoryCreate, MemorySearchRequest, MemoryUpdate
@@ -93,6 +94,9 @@ class MemoryService:
         vectors = await self._provider.embed([text])
         if vectors:
             memory.embedding = _dumps(vectors[0])
+            # Mirror into the native pgvector column when present (no-op on
+            # SQLite); same transaction as the portable column above.
+            sync_vector(self._db, memory.id, vectors[0])
             self._db.commit()
             self._db.refresh(memory)
         return memory
@@ -310,6 +314,13 @@ class MemoryService:
             self._db.add(memory)
             stored.append(memory)
         if stored:
+            self._db.commit()
+            # Mirror portable embeddings into the native pgvector column (no-op
+            # on SQLite / when the column is absent).
+            for memory in stored:
+                vector = _loads(memory.embedding)
+                if isinstance(vector, list) and all(isinstance(v, (int, float)) for v in vector):
+                    sync_vector(self._db, memory.id, vector)
             self._db.commit()
         return stored
 

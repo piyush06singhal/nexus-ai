@@ -10,6 +10,8 @@
 #   • wrong password           → 403 invalid_credentials
 #   • worker drain (A2)        → queued workflow + orchestration runs reach
 #     terminal state off the request path (workers enabled for the run)
+#   • pgvector smoke (B3)       → write-path sync + native <=> retrieval rank
+#     semantically-nearest memories first (PostgreSQL + pgvector)
 #   • concurrent load baseline → p50/p95/p99 + fatal-error rate
 #   • production-readiness report (expect PASS on identity/jwt with the
 #     generated secrets; TLS/ingress items correctly WARN — upstream flags)
@@ -217,6 +219,84 @@ check(f"orchestration terminal ({status})",
 raise SystemExit(0 if ok else 1)
 PY
 
+# ── 6.5 pgvector semantic-memory smoke (B3) ───────────────────────────────
+# Migration 0015 adds memories.embedding_vector vector(1536) on Postgres.
+# Verify the write-path sync + native <=> retrieval end to end against the
+# isolated smoke DB, using a deterministic 1536-dim provider (the standard
+# MockEmbeddingProvider is 128-dim and would trip pgvector's width check).
+say "verifying pgvector semantic memory (native <=> retrieve)..."
+( cd "$API_DIR" && DATABASE_URL="$DATABASE_URL" "$VENV_PY" - <<'PY' ) || die "pgvector smoke failed"
+import asyncio, os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.db.models.memory import Memory, MemoryOwnerType, MemoryStatus, MemoryType
+from app.memory.pgvector import pgvector_enabled, sync_vector
+from app.memory.retrieval import HybridRetriever
+
+URL = os.environ["DATABASE_URL"]
+engine = create_engine(URL)
+
+# Early, honest gate: this image must have the extension (migration 0015 ran).
+import app.db.models  # noqa: F401
+from app.db.session import Base
+
+if not pgvector_enabled(engine):
+    raise SystemExit("pgvector column missing after alembic upgrade head")
+
+# Deterministic 1536-dim provider (mock is 128-dim; column is vector(1536)).
+class P1536:
+    dimensions = 1536
+    async def embed(self, texts):
+        import hashlib, math, re
+        out = []
+        for t in texts:
+            v = [0.0] * 1536
+            for tok in re.findall(r"[a-z]+|\d+", t.lower()):
+                d = hashlib.sha256(tok.encode()).digest()
+                v[int.from_bytes(d[:8], "big") % 1536] += (1.0 if d[8] & 1 else -1.0)
+            n = math.sqrt(sum(x*x for x in v)) or 1.0
+            out.append([x/n for x in v])
+        return out
+
+with Session(bind=engine, expire_on_commit=False) as session:
+    def seed(content):
+        m = Memory(
+            namespace="prod-smoke", type=MemoryType.SEMANTIC,
+            owner_type=MemoryOwnerType.SYSTEM, owner_id=None,
+            status=MemoryStatus.ACTIVE, content=content,
+            summary=content[:60], confidence=1.0, importance=0.5,
+        )
+        session.add(m); session.commit(); session.refresh(m)
+        return m
+
+    a = seed("Dogs are friendly animals that love playing fetch")
+    b = seed("Advanced algebra covers polynomial rings and Galois theory")
+    c = seed("Dogs enjoy walks in the park chasing squirrels")
+
+    p = P1536()
+    loop = asyncio.new_event_loop()
+    try:
+        for m in (a, b, c):
+            sync_vector(session, m.id, loop.run_until_complete(p.embed([m.content]))[0])
+        session.commit()
+        retriever = HybridRetriever(session, embedding_provider=p)
+        results = loop.run_until_complete(
+            retriever.retrieve("friendly dog behavior", namespace="prod-smoke", top_k=3)
+        )
+    finally:
+        loop.close()
+
+    native = retriever.last_used_pgvector
+    top = [r.memory.id for r in results]
+    good = native and b.id not in top[:2] and (a.id in top[:2] or c.id in top[:2])
+    print(f"    pgvector native path: {'PASS' if native else 'FAIL'}"
+          f" (last_used_pgvector={native}, {len(results)} results)")
+    if not native or not good:
+        raise SystemExit("pgvector native retrieval did not rank dog memories first")
+    raise SystemExit(0)
+PY
+
 # ── 6. Concurrent load baseline ───────────────────────────────────────────
 say "running concurrent load baseline (16 clients, 320 requests)..."
 ( cd "$API_DIR" && "$VENV_PY" -m scripts.load_baseline --clients 16 --requests 320 \
@@ -234,7 +314,7 @@ cat <<EOF
   • Bootstrap admin: $BOOTSTRAP_EMAIL / $BOOTSTRAP_PASSWORD
     (ephemeral, this run only — never use in real production)
   • Chain: unauth 401 ✓  login 200 ✓  authed read 200 ✓
-           wrong-password 403 ✓  worker drain ✓  load baseline ✓
+           wrong-password 403 ✓  worker drain ✓  pgvector ✓  load baseline ✓
   • Rate limit: AUTH=20/min, DEFAULT=600/min, EXPENSIVE=30/min
     (tune via RATE_LIMIT_* env); backend=$RATE_LIMIT_BACKEND
   • Workers: workflow + orchestration daemon threads ON (drain verified)

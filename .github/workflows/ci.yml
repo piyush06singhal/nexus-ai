@@ -18,7 +18,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        # pgvector-enabled image: the migration round-trip below exercises
+        # migration 0015 (CREATE EXTENSION vector).
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: nexus
           POSTGRES_PASSWORD: nexus_ci
@@ -72,6 +74,12 @@ jobs:
           alembic upgrade head
           alembic downgrade base
           alembic upgrade head
+
+      - name: pgvector semantic memory (gated, PostgreSQL)
+        env:
+          PGVECTOR_TEST_DATABASE_URL: postgresql+psycopg://nexus:nexus_ci@localhost:5432/nexus
+          AUTH_ENABLED: "false"
+        run: pytest tests/test_pgvector.py -v
 
       - name: Production readiness report (non-blocking)
         env:

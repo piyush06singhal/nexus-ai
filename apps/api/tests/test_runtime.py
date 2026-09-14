@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.ai.providers.mock_provider import MockProvider
-from app.ai.types import TokenUsage
+from app.ai.types import GenerationOptions, TokenUsage
 from app.core.errors import ServiceUnavailableError, ValidationError
 from app.db.models.agent import AgentStatus
 from app.db.models.execution import ExecutionStatus
@@ -67,6 +67,57 @@ def test_runtime_executes_and_persists_success(db):
     assert "Analysis complete" in execution.output_data
     # Task should now be completed.
     assert TaskService(db).get(task.id).status.value == "completed"
+
+
+def test_split_provider_prefix():
+    from app.runtime.runtime import _split_provider_prefix
+
+    # No slash -> unchanged (existing plain model names, mock default).
+    assert _split_provider_prefix("mock", "mock-model") == ("mock", "mock-model")
+    assert _split_provider_prefix("openai", "gpt-4o") == ("openai", "gpt-4o")
+    # Prefix override: a mock-flagged agent targeting a real vendor.
+    assert _split_provider_prefix("mock", "anthropic/claude-sonnet-5") == (
+        "anthropic",
+        "claude-sonnet-5",
+    )
+    # Redundant self-prefix is still stripped.
+    assert _split_provider_prefix("anthropic", "anthropic/claude-sonnet-5") == (
+        "anthropic",
+        "claude-sonnet-5",
+    )
+    # mock/ prefixes never hijack the mock path.
+    assert _split_provider_prefix("mock", "mock/foo") == ("mock", "mock/foo")
+    # Unknown prefixes (not registered providers) pass through untouched.
+    assert _split_provider_prefix("openai", "databricks/dbrx") == ("openai", "databricks/dbrx")
+
+
+def test_provider_prefix_routes_mock_agent_to_real_provider(db, monkeypatch):
+    """The subagent-prefix protocol: ``agent.model_name="anthropic/..."`` on a
+    mock-flagged agent resolves to the real Anthropic provider with the prefix
+    stripped from the model passed to the API."""
+    agent, task = _seed_active_agent_and_task(db, provider_name="mock")
+    agent.model_name = "anthropic/claude-sonnet-5"
+    db.commit()
+
+    resolved: list[str] = []
+    seen_options: list[GenerationOptions] = []
+
+    class RecordingProvider(MockProvider):
+        def generate(self, messages, *, options=None):
+            seen_options.append(options)
+            return super().generate(messages, options=options)
+
+    def fake_get_provider(name):
+        resolved.append(name)
+        return RecordingProvider(reply=GOOD_JSON)
+
+    monkeypatch.setattr("app.runtime.runtime.get_provider", fake_get_provider)
+    runtime = _build_runtime(db, provider=None)
+
+    execution = runtime.execute_task(task.id)
+    assert resolved == ["anthropic"]
+    assert seen_options[0].model == "claude-sonnet-5"  # prefix was stripped
+    assert execution.status == ExecutionStatus.SUCCEEDED
 
 
 def test_runtime_resolves_provider_from_agent_branch_not_relevant_here(db):

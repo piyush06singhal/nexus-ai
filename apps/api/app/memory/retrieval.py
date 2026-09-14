@@ -16,11 +16,17 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models.memory import Memory, MemoryStatus, MemoryType
 from app.memory.embedding import EmbeddingProvider
+from app.memory.pgvector import (
+    nearest_neighbours_clause,
+    pgvector_enabled,
+    vector_literal,
+)
 from app.memory.policies import RetrievalPolicy, is_expired
 
 # Decay constant: halves a memory's recency score every ``_HALF_LIFE_HOURS``.
@@ -106,6 +112,12 @@ class HybridRetriever:
         self._embedding_provider = embedding_provider
         self._settings = settings
         self._weights = weights or _default_weights(settings)
+        #: True when the *most recent* retrieve() used the pgvector-native
+        #: candidate ordering — observability for callers and the harness.
+        self.last_used_pgvector: bool = False
+        #: Expected native column dimension; only vectors of this width can be
+        #: compared with ``<=>`` against the ``vector(1536)`` column.
+        self._pgvector_dim = settings.memory_pgvector_dim if settings is not None else 1536
 
     async def retrieve(
         self,
@@ -133,6 +145,8 @@ class HybridRetriever:
             memory_types=memory_types,
             include_expired=include_expired,
             now=now,
+            top_k=top_k,
+            query_vec=query_vec,
         )
 
         scored: list[MemoryRetrievalResult] = []
@@ -155,7 +169,21 @@ class HybridRetriever:
         memory_types: list[MemoryType] | None,
         include_expired: bool,
         now: datetime,
+        top_k: int,
+        query_vec: list[float] | None,
     ) -> list[Memory]:
+        """Fetch candidate memories within *namespace*.
+
+        Base behavior: return every matching memory (Python-cosine path scores
+        them all). When the pgvector-native path is available (PostgreSQL, the
+        ``embedding_vector`` column exists, and *query_vec* matches its
+        dimension) the candidates are instead pre-filtered with
+        ``ORDER BY embedding_vector <=> :qv`` — a bounded prefetch of
+        ``max(top_k * 5, 64)`` heads of the HNSW index — so the final blended
+        score only runs over semantically-plausible rows. Failures degrade
+        silently to the base set (``ProgrammingError`` on an unusable extension
+        disables the feature for the request, never raises).
+        """
         stmt = select(Memory).where(
             Memory.namespace == namespace,
             Memory.status == MemoryStatus.ACTIVE,
@@ -166,7 +194,28 @@ class HybridRetriever:
             stmt = stmt.where(Memory.type.in_(memory_types))
         if not include_expired:
             stmt = stmt.where((Memory.expires_at.is_(None)) | (Memory.expires_at > now))
-        return list(self._db.scalars(stmt).all())
+
+        base = list(self._db.scalars(stmt).all())
+        if (
+            query_vec is not None
+            and len(query_vec) == self._pgvector_dim
+            and pgvector_enabled(self._db.get_bind())
+        ):
+            prefetch = max(top_k * 5, 64)
+            ordered = (
+                stmt.order_by(nearest_neighbours_clause())
+                .params(qv=vector_literal(query_vec))
+                .limit(prefetch)
+            )
+            try:
+                self.last_used_pgvector = True
+                return list(self._db.scalars(ordered).all())
+            except ProgrammingError:
+                # Extension/column unusable in practice — fall back to the
+                # Python-cosine candidate set for this request.
+                self.last_used_pgvector = False
+                return base
+        return base
 
     def _score(
         self,

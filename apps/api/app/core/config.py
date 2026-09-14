@@ -57,10 +57,29 @@ class Settings(BaseSettings):
     openai_max_retries: int = 2
     openai_retry_backoff_seconds: float = 1.0
 
+    # Anthropic (Claude). Same keyless-fallback contract as OpenAI: without a
+    # key the adapter returns deterministic canned output; with one it calls the
+    # real /v1/messages API (same timeout/retry/backoff helpers, extra headers).
+    #
+    # Note: the base URL is deliberately scoped to NEXUS_ANTHROPIC_BASE_URL, NOT
+    # ANTHROPIC_BASE_URL. Anthropic-SDK tooling (e.g. Claude Code) exports
+    # ANTHROPIC_BASE_URL/* to route *its own* client calls (often to a local
+    # proxy), and pydantic-settings would otherwise silently adopt that value
+    # and point NEXUS real-model calls at the wrong host.
+    anthropic_api_key: str = ""
+    anthropic_base_url: str = Field(
+        default="", validation_alias="NEXUS_ANTHROPIC_BASE_URL"
+    )  # empty -> https://api.anthropic.com/v1
+    anthropic_default_model: str = "claude-sonnet-5"
+    anthropic_request_timeout_seconds: float = 60.0
+    anthropic_max_retries: int = 2
+    anthropic_retry_backoff_seconds: float = 1.0
+
     # Memory system (Phase 4)
     memory_embedding_provider: str | None = None  # "openai" to enable embeddings, else None
     memory_embedding_model: str = "text-embedding-3-small"
     memory_embedding_dimensions: int = 1536
+    memory_pgvector_dim: int = 1536  # native vector(1536) column on PostgreSQL only
     memory_retrieval_weight_semantic: float = 0.4
     memory_retrieval_weight_recency: float = 0.2
     memory_retrieval_weight_importance: float = 0.2
