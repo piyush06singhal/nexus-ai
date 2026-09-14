@@ -89,9 +89,12 @@ class ResourceGovernanceService:
         """Seed `ResourceLimit` rows from the ``resource_max_*`` config defaults.
 
         Turns the tunable defaults into real governance rows: one entry per core
-        category at ``scope`` (global by default) and, when ``company_ids`` is
-        given, one per-tenant entry per company. Idempotent — re-running updates
-        existing rows via :meth:`set_limit` instead of duplicating them.
+        category (tokens/cost/tool_calls/iterations/duration_seconds) *and* per
+        Phase 12 category (sim_runs/optimization_candidates/…, using
+        ``resource_max_phase12_default``), at ``scope`` (global by default) and,
+        when ``company_ids`` is given, one per-tenant entry per company.
+        Idempotent — re-running updates existing rows via :meth:`set_limit`
+        instead of duplicating them.
 
         Gated by the ``RESOURCE_LIMITS_PROVISION`` flag at startup (see the app
         lifespan) or by running ``scripts/seed_resource_limits.py`` standalone.
@@ -103,6 +106,16 @@ class ResourceGovernanceService:
             ResourceCategory.ITERATIONS.value: settings.resource_max_iterations_default,
             ResourceCategory.DURATION_SECONDS.value: settings.resource_max_duration_seconds_default,
         }
+        # Phase 12 category set (lazy import — governance.py imports this module;
+        # a top-level import would be circular).
+        try:
+            from app.phase12.governance import PHASE12_CATEGORIES
+
+            for category in PHASE12_CATEGORIES:
+                defaults[category] = settings.resource_max_phase12_default
+        except ImportError:
+            PHASE12_CATEGORIES = {}  # noqa: F841 — phase12 absent: core only
+
         created: list[ResourceLimit] = []
         for category, limit_value in defaults.items():
             created.append(

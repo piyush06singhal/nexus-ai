@@ -45,6 +45,9 @@ done
 TLS_FILES=()
 if [[ "$TLS" -eq 1 ]]; then
   TLS_FILES=(-f docker-compose.tls.yml)
+  # Signal the app that TLS is terminated at the Caddy edge, so the readiness
+  # gate (`tls` check) passes instead of assuming plaintext transport.
+  export TLS_ENABLED=true
 fi
 
 TAG="${1:-latest}"

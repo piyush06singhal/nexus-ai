@@ -39,6 +39,12 @@ services:
       ORCHESTRATION_WORKER_ENABLED: "${API_WORKERS_ENABLED:-false}"
       LOGGING_JSON: "true"
       SECURE_AUTH_COOKIES: ${SECURE_AUTH_COOKIES:-true}
+      # TLS terminates at the Caddy/LB edge: `--tls` sets this; self-managed TLS
+      # deployments should too. Lets the readiness `tls` gate PASS.
+      TLS_ENABLED: ${TLS_ENABLED:-false}
+      # Seed per-tenant governance limits (5 core + 8 Phase 12 categories) at
+      # startup — production-recommended.
+      RESOURCE_LIMITS_PROVISION: ${RESOURCE_LIMITS_PROVISION:-true}
       # Mandatory secrets — compose errors until these are provided.
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required for production}
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required for production}

@@ -185,11 +185,10 @@ Key env vars (see `.env.example` for full list):
 | Redis | `REDIS_URL` |
 | Auth | `AUTH_ENABLED`, `JWT_SECRET_KEY`, `SECRET_ENCRYPTION_KEY`, `ACCESS_TOKEN_LIFETIME_MINUTES` |
 | Security | `SSRF_PROTECTION_ENABLED`, `PROMPT_INJECTION_PROTECTION_ENABLED`, `SECURE_AUTH_COOKIES` |
-| Governance | `KILL_SWITCH_GLOBAL_PAUSE`, `APPROVAL_*`, `RESOURCE_MAX_*` |
 | Feature Flags | `FEATURE_FLAGS_ENABLED`, `FEATURE_*` |
 | Rate limiting | `RATE_LIMIT_ENABLED`, `RATE_LIMIT_BACKEND` (`memory` per-process, `redis` cross-process ZSET — degrades to memory on outage), `RATE_LIMIT_*_PER_MINUTE` |
 | Workers | `WORKFLOW_WORKER_ENABLED`, `ORCHESTRATION_WORKER_ENABLED`, `ORCHESTRATION_*`, `WORKER_HEARTBEAT_PATH` (headless-worker heartbeat file), `API_WORKERS_ENABLED` (compose: in-API vs split) |
-| Governance | `KILL_SWITCH_GLOBAL_PAUSE`, `APPROVAL_*`, `RESOURCE_MAX_*`, `RESOURCE_LIMITS_PROVISION` (seed per-tenant limits at startup) |
+| Governance | `KILL_SWITCH_GLOBAL_PAUSE`, `APPROVAL_*`, `RESOURCE_MAX_*`, `RESOURCE_LIMITS_PROVISION` (seed per-tenant limits at startup), `RESOURCE_MAX_PHASE12_DEFAULT` (shared per-day cap for the 8 Phase 12 categories) |
 | Startup AI | `MODEL_PLANNERS_ENABLED` (mission analysis + strategy via real model when a key exists; else deterministic) |
 | Monitoring | `PROMETHEUS_RETENTION`, `GRAFANA_ADMIN_USER/PASSWORD`, `PROMETHEUS_PORT`, `GRAFANA_PORT` |
 | External | `EXTERNAL_*` (timeouts, caps, SSRF, connectors) |
@@ -245,12 +244,18 @@ ephemeral JWT/encryption secrets, then verifies the enforced chain end-to-end:
 | Worker drain — workflow execution → terminal | `completed` (worker daemon) | ✓ |
 | Worker drain — orchestration run → terminal | `completed` (worker daemon) | ✓ |
 | Concurrent load baseline | ≤ 5% fatal-error rate | ✓ (0.00%) |
-| `production_readiness` | PASS on identity/jwt; TLS/ingress WARN | ✓ (13 OK / 3 WARN / 0 FAIL) |
+| `production_readiness` | PASS on identity/jwt + governance; TLS/ingress + sandboxing WARN | ✓ (15 OK / 2 WARN / 0 FAIL) |
 
-The 3 WARN items are the documented upstream flags (TLS terminated by a load
-balancer, OS-level sandboxing, per-tenant resource-limit tuning) that only a real
-deployment host resolves. `SECURE_AUTH_COOKIES=true` is set by the harness so the
-session-cookie check is green (the deploy overlay defaults it too).
+The remaining WARN items are honest deployment-context flags, not code gaps:
+`tls` warns only because this run is plaintext (a `--tls` deploy exports
+`TLS_ENABLED=true` and PASSes), and `os_sandboxing` warns because OS-level
+process isolation cannot be fabricated in-process without new dependencies
+(tool calls are still bounded in-process — timeout, memory, output-size caps
+and fs/network/process allow flags). `RESOURCE_LIMITS_PROVISION=true` (set by
+the harness) turns both resource-limit checks green, seeding the 5 core + 8
+Phase 12 categories as global + per-tenant defaults. `SECURE_AUTH_COOKIES=true`
+is set by the harness so the session-cookie check is green (the deploy overlay
+defaults it too).
 
 The harness runs against an **isolated per-run Postgres schema** (created and
 dropped per run) so a stale bootstrap admin or schema from a previous run can
@@ -364,7 +369,10 @@ in front of the stack — `/api/*`, `/docs`, `/redoc`, `/openapi.json` → api;
 everything else → web. Automatic HTTPS: public domains via Let's Encrypt, an
 internal self-signed CA for `localhost`. `SITE_ADDRESS` names the host; the
 overlay hardens cookies (`SECURE_AUTH_COOKIES`) and pins `CORS_ORIGINS` /
-`TRUSTED_HOSTS` to it. Enable with `bash scripts/deploy.sh --tls`.
+`TRUSTED_HOSTS` to it. `scripts/deploy.sh --tls` also exports `TLS_ENABLED=true`
+so the readiness `tls` gate reports PASS (TLS terminated at this edge) instead
+of warning about plaintext. Without the Caddy edge, set `TLS_ENABLED=true`
+yourself whenever an upstream LB/pass provides TLS.
 
 ### 11e. Managed deployment path (documented, not shipped)
 

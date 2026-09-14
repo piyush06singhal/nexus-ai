@@ -37,7 +37,8 @@ class TestProvisionDefaultLimits:
         svc = ResourceGovernanceService(db)
         created = svc.provision_default_limits()
         db.commit()
-        assert len(created) == 5  # 5 core categories
+        # 5 core categories + 8 Phase 12 categories = 13 global rows.
+        assert len(created) == 13
 
         for lim in created:
             assert lim.scope == ResourceLimitScope.GLOBAL.value
@@ -53,10 +54,10 @@ class TestProvisionDefaultLimits:
         c2 = uuid4()
         created = ResourceGovernanceService(db).provision_default_limits(company_ids=[c1, c2])
         db.commit()
-        # 5 GLOBAL rows + 5 categories × 2 companies = 15 rows returned.
-        assert len(created) == 15
+        # 13 GLOBAL rows + 13 categories × 2 companies = 39 rows returned.
+        assert len(created) == 39
         company_rows = [lim for lim in created if lim.tenant_id is not None]
-        assert len(company_rows) == 10
+        assert len(company_rows) == 26
         tenants = {lim.tenant_id for lim in company_rows}
         assert tenants == {c1, c2}
         for lim in company_rows:
@@ -71,8 +72,8 @@ class TestProvisionDefaultLimits:
         svc.provision_default_limits()
         db.commit()
         total = db.query(ResourceLimit).count()
-        # Only 5 rows (one per category) — re-run updated existing rows.
-        assert total == 5
+        # Only 13 rows (one per category) — re-run updated existing rows.
+        assert total == 13
         db.close()
 
     def test_values_match_config_defaults(self):
@@ -91,6 +92,13 @@ class TestProvisionDefaultLimits:
         assert by_cat[ResourceCategory.DURATION_SECONDS.value] == float(
             settings.resource_max_duration_seconds_default
         )
+        # Each Phase 12 category (sim_runs/optimization_candidates/…) is seeded at
+        # the shared resource_max_phase12_default.
+        from app.phase12.governance import PHASE12_CATEGORIES
+
+        assert len(PHASE12_CATEGORIES) == 8
+        for category in PHASE12_CATEGORIES:
+            assert by_cat[category] == settings.resource_max_phase12_default
         db.close()
 
 
@@ -112,6 +120,7 @@ class TestResourceLimitsConfig:
         assert settings.resource_max_tool_calls_default > 0
         assert settings.resource_max_iterations_default > 0
         assert settings.resource_max_duration_seconds_default > 0
+        assert settings.resource_max_phase12_default > 0
 
 
 # ---------------------------------------------------------------------------
@@ -130,3 +139,13 @@ class TestReadinessResourceLimits:
         assert rl is not None
         assert rl.status == "WARN"
         assert "not provisioned" in rl.message.lower()
+
+    def test_readiness_passes_when_provision_on(self, monkeypatch):
+        """With RESOURCE_LIMITS_PROVISION=true both resource checks PASS."""
+        from app.checks.production_readiness import ProductionReadiness
+
+        monkeypatch.setattr(settings, "resource_limits_provision", True)
+        check = ProductionReadiness()
+        results = {r.name: r for r in check.run_all()}
+        assert results["resource_limits"].status == "PASS"
+        assert results["phase12_resource_limits"].status == "PASS"

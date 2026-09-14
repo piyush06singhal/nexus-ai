@@ -51,6 +51,10 @@ export SECURE_AUTH_COOKIES=true
 # CREATED/QUEUED runs (see docs/operations.md §Workers & Queues).
 export WORKFLOW_WORKER_ENABLED=true
 export ORCHESTRATION_WORKER_ENABLED=true
+# Seed resource_limit rows at startup from the resource_max_* ceilings (5 core +
+# 8 Phase 12 categories, global + per-tenant) so the readiness gate and the
+# governance API see enforcement defaults — production-recommended.
+export RESOURCE_LIMITS_PROVISION=true
 
 # Fresh ephemeral secrets each run (keeps the smoke reproducible and key-less).
 export JWT_SECRET_KEY="${JWT_SECRET_KEY:-$(openssl rand -hex 32)}"

@@ -216,23 +216,26 @@ class ProductionReadiness:
                     "tls",
                     status,
                     (
-                        "TLS termination configured (upstream)"
+                        "TLS termination configured (Caddy edge docker-compose.tls.yml "
+                        "or an upstream LB; TLS_ENABLED=true)"
                         if s.tls_enabled
-                        else "TLS_TERMINATED flag unset — assume plaintext transport "
-                        "until a load balancer terminates TLS"
+                        else "TLS_ENABLED flag unset — assume plaintext transport until "
+                        "the Caddy edge / LB terminates TLS (deploy with --tls)"
                     ),
                 )
             )
         else:
             self.results.append(
-                CheckResult("tls", "WARN", "TLS_TLS_ENABLED unset (dev/test; run TLS in prod)")
+                CheckResult("tls", "WARN", "TLS_ENABLED unset (dev/test; run TLS in prod)")
             )
         self.results.append(
             CheckResult(
                 "os_sandboxing",
                 "WARN",
                 "OS-level process sandboxing is a documented deployment item — "
-                "simulated/speculative tool sandboxes are enforced in-process",
+                "tool sandboxes are enforced in-process today (per-call timeout, "
+                "memory cap, output-size cap, and allow flags for "
+                "filesystem/network/process access)",
             )
         )
 
@@ -292,34 +295,36 @@ class ProductionReadiness:
                 "closed sandbox refuses external side effects (no HTTP/email/financial/DB writes)",
             )
         )
+        provision_on = getattr(self.settings, "resource_limits_provision", False)
         self.results.append(
             CheckResult(
                 "phase12_resource_limits",
-                "WARN",
-                f"{len(PHASE12_CATEGORIES)} Phase 12 budget categories registered; "
-                "per-tenant limits are DB-configured — set them via the governance API "
-                "before public launch",
+                "PASS" if provision_on else "WARN",
+                (
+                    f"{len(PHASE12_CATEGORIES)} Phase 12 budget categories provisioned from "
+                    "resource_max_phase12_default at startup (RESOURCE_LIMITS_PROVISION=true); "
+                    "per-tenant limits adjustable via the governance API"
+                    if provision_on
+                    else f"{len(PHASE12_CATEGORIES)} Phase 12 budget categories registered; "
+                    "per-tenant limits are DB-configured — set RESOURCE_LIMITS_PROVISION=true "
+                    "or run scripts/seed_resource_limits.py before public launch"
+                ),
             )
         )
-        if getattr(self.settings, "resource_limits_provision", False):
-            self.results.append(
-                CheckResult(
-                    "resource_limits",
-                    "PASS",
+        self.results.append(
+            CheckResult(
+                "resource_limits",
+                "PASS" if provision_on else "WARN",
+                (
                     "per-tenant governance limits are provisioned from resource_max_* config "
-                    "defaults at startup (RESOURCE_LIMITS_PROVISION=true)",
-                )
-            )
-        else:
-            self.results.append(
-                CheckResult(
-                    "resource_limits",
-                    "WARN",
-                    "resource_max_* defaults are not provisioned into the DB; set "
+                    "defaults at startup (RESOURCE_LIMITS_PROVISION=true)"
+                    if provision_on
+                    else "resource_max_* defaults are not provisioned into the DB; set "
                     "RESOURCE_LIMITS_PROVISION=true or run scripts/seed_resource_limits.py "
-                    "before a public launch",
-                )
+                    "before a public launch"
+                ),
             )
+        )
 
     # -- Run --------------------------------------------------------------
     def run_all(self) -> list[CheckResult]:

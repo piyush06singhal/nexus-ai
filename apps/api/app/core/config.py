@@ -256,10 +256,15 @@ class Settings(BaseSettings):
     resource_max_tokens_default: int = 500_000
     resource_max_cost_default: float = 500.0
     resource_max_tool_calls_default: int = 500
+    # Phase 12 categories (simulation/optimization/benchmark/experiment/marketplace)
+    # use this shared per-day default when provisioning is enabled — one cap for
+    # the secondary category set, overridable per category via the governance API.
+    resource_max_phase12_default: float = 1000.0
     # Populate resource_limit rows at startup from the resource_max_* ceilings
-    # above (global + one row per existing tenant). Idempotent; companies can
-    # still lower their own limits via the governance API afterwards. Off by
-    # default so tests/dev start unlimited — enable for real deployments.
+    # above — the 5 core categories + the 8 Phase 12 categories — (global + one
+    # row per existing tenant). Idempotent; companies can still lower their own
+    # limits via the governance API afterwards. Off by default so tests/dev start
+    # unlimited — enable for real deployments.
     resource_limits_provision: bool = False
     # Per-category budget ceilings (USD) defaults; companies may lower them.
     resource_default_budget_keys: list[str] = Field(
