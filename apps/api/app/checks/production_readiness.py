@@ -301,6 +301,25 @@ class ProductionReadiness:
                 "before public launch",
             )
         )
+        if getattr(self.settings, "resource_limits_provision", False):
+            self.results.append(
+                CheckResult(
+                    "resource_limits",
+                    "PASS",
+                    "per-tenant governance limits are provisioned from resource_max_* config "
+                    "defaults at startup (RESOURCE_LIMITS_PROVISION=true)",
+                )
+            )
+        else:
+            self.results.append(
+                CheckResult(
+                    "resource_limits",
+                    "WARN",
+                    "resource_max_* defaults are not provisioned into the DB; set "
+                    "RESOURCE_LIMITS_PROVISION=true or run scripts/seed_resource_limits.py "
+                    "before a public launch",
+                )
+            )
 
     # -- Run --------------------------------------------------------------
     def run_all(self) -> list[CheckResult]:

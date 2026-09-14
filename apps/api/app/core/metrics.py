@@ -113,3 +113,40 @@ def model_tokens(model: str, input_tokens: int, output_tokens: int) -> None:
     registry.increment("model.tokens.input", float(input_tokens))
     registry.increment("model.tokens.output", float(output_tokens))
     registry.increment(f"model.{model}.calls")
+
+
+# ── Prometheus text exposition ──────────────────────────────────────────────
+
+
+def _prom_name(name: str) -> str:
+    """Dots are illegal in Prometheus metric names — normalize to underscores."""
+    return name.replace(".", "_")
+
+
+def prometheus_text(local_registry: _MetricSet | None = None) -> str:
+    """Render a snapshot in Prometheus text-exposition format (line protocol).
+
+    Counters map to ``<name>_total``, gauges to ``<name>``, and histograms to
+    ``<name>_milliseconds_count/_sum`` (bucket bounds are intentionally omitted —
+    the registry stores only count+sum, which is enough for rate()/avg()). This
+    is the wire format Prometheus scrapes; the JSON endpoint
+    (``/api/v1/system/metrics``) remains for dashboards.
+    """
+    snap = (local_registry or registry).snapshot()
+    lines: list[str] = []
+    for name, value in snap["counters"].items():
+        n = _prom_name(name)
+        lines.append(f"# TYPE {n}_total counter")
+        lines.append(f"{n}_total {value:g}")
+    for name, value in snap["gauges"].items():
+        n = _prom_name(name)
+        lines.append(f"# TYPE {n} gauge")
+        lines.append(f"{n} {value:g}")
+    for name, hist in snap["histograms"].items():
+        n = _prom_name(name)
+        lines.append(f"# TYPE {n}_milliseconds histogram")
+        lines.append(f"{n}_milliseconds_count {hist['count']}")
+        lines.append(f"{n}_milliseconds_sum {hist['sum_ms']:g}")
+    lines.append("# TYPE nexus_process_started_at gauge")
+    lines.append(f"nexus_process_started_at {snap['process_started_at']:g}")
+    return "\n".join(lines) + "\n"

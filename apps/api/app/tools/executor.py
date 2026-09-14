@@ -191,6 +191,27 @@ class ToolExecutor:
         if tool_result.execution_time_ms is None:
             tool_result.execution_time_ms = (time.monotonic() - start) * 1000
 
+        # 4.5 Enforce output size limit (in-process guard — the first kernelless
+        #     but real enforcement of the declared sandbox budget).
+        if sandbox.max_output_bytes > 0 and tool_result.data is not None:
+            output_bytes = len(json.dumps(tool_result.data, default=str).encode("utf-8"))
+            if output_bytes > sandbox.max_output_bytes:
+                logger.warning(
+                    "tool_output_truncated",
+                    extra={
+                        "tool": tool_name,
+                        "output_bytes": output_bytes,
+                        "max_bytes": sandbox.max_output_bytes,
+                        "execution_id": str(execution_id),
+                    },
+                )
+                tool_result.data = None
+                tool_result.error = (
+                    f"Tool output ({output_bytes:,} bytes) exceeded the sandbox "
+                    f"limit ({sandbox.max_output_bytes:,} bytes) and was discarded"
+                )
+                tool_result.status = ToolResultStatus.DENIED
+
         # 5. Persist
         record = self._persist(
             tool_name=tool_name,

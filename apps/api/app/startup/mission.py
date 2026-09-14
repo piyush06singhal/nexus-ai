@@ -34,7 +34,7 @@ from app.startup.analyze import run_analysis
 from app.startup.events import StartupEventLogger, StartupEvents
 from app.startup.graph import MissionGraphBuilder
 from app.startup.objectives import ObjectiveDecomposer
-from app.startup.strategy import DeterministicStrategicPlanner
+from app.startup.strategy import resolve_strategic_planner
 from app.startup.types import MissionAnalysisResult, ValidationResult
 from app.startup.validate import MissionValidator
 
@@ -219,15 +219,16 @@ class MissionManager:
     def plan(self, mission: Mission) -> dict[str, Any]:
         """Produce a strategic plan + derived startup plan for the mission.
 
-        Deterministic by default: the strategy derives from the (persisted or
-        freshly run) analysis, and the startup plan is built from the same
-        analysis. Both rows + their mission-graph edges + goal decomposition are
-        created here; bootstrap consumes the approved startup plan later.
+        Planner selection is configurable (Item 8): model-backed
+        (:class:`ModelStrategicPlanner`) when ``MODEL_PLANNERS_ENABLED=true``
+        and a provider key is configured, else deterministic rule-based. Both
+        rows + their mission-graph edges + goal decomposition are created here;
+        bootstrap consumes the approved startup plan later.
         """
         mission = self._require(mission.company_id, mission.id)
         analysis = self._analysis_or_run(mission)
 
-        strategy_data = DeterministicStrategicPlanner(self._db).plan(mission, analysis)
+        strategy_data = resolve_strategic_planner(self._db).plan(mission, analysis)
         strategy = StrategicPlan(
             mission_id=mission.id,
             vision=strategy_data.vision,

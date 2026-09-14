@@ -1,0 +1,17 @@
+# NEXUS Prometheus scrape config (docker-compose.monitoring.yml).
+#
+# Scrapes the API's token-free exposition endpoint every 15s. Everything here
+# is process-level (request counters/latencies, queue depth, token totals) —
+# no per-tenant data crosses this scrape.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: nexus-api
+    metrics_path: /api/v1/system/metrics/prometheus
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: nexus-api

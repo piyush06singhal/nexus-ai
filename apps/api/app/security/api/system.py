@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -116,6 +117,19 @@ async def metrics_snapshot(
         counters={k: int(v) for k, v in snap.get("counters", {}).items()},
         recorded_at=datetime.now(UTC),
     )
+
+
+@router.get("/metrics/prometheus", response_class=PlainTextResponse, status_code=200)
+async def metrics_prometheus():
+    """Prometheus text-exposition dump of the process-local metrics registry.
+
+    Scrape target for the ``docker-compose.monitoring.yml`` overlay. Token-free
+    by design (see AuthMiddleware); only process-level aggregates are exposed,
+    never tenant data.
+    """
+    from app.core.metrics import prometheus_text
+
+    return PlainTextResponse(prometheus_text(), media_type="text/plain; version=0.0.4")
 
 
 # ── Feature flags ───────────────────────────────────────────────────────────

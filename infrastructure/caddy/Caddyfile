@@ -1,0 +1,52 @@
+# NEXUS edge — Caddy reverse-proxy / TLS termination (docker-compose.tls.yml).
+#
+# Public surface is a single HTTPS endpoint in front of the API and web:
+#   *  /api/*        → api:8000   (REST + native SSE streaming)
+#   *  /docs, /redoc, /openapi.json → api:8000
+#   *  everything else → web:3000 (Next.js)
+#
+# Automatic HTTPS is Caddy's default: for a public SITE_ADDRESS it provisions
+# and renews Let's Encrypt certificates; for "localhost" it falls back to its
+# internal CA (self-signed). Set SITE_ADDRESS to your real domain to upgrade.
+# Forcing self-signed everywhere (offline dev / pre-DNS rollout) is a one-line
+# change: uncomment the `tls internal` directive below.
+{
+	admin off
+}
+
+{$SITE_ADDRESS:localhost} {
+	# -- Optional: force self-signed everywhere (uncomment for offline dev). --
+	# tls internal
+
+	# Compress HTML/JSON/SSE payloads at the edge.
+	encode gzip
+
+	# Edge security headers (applied unless the origin already sent them).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	# Order matters: specific paths first, catch-all last.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle /docs {
+		reverse_proxy api:8000
+	}
+
+	handle /redoc {
+		reverse_proxy api:8000
+	}
+
+	handle /openapi.json {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

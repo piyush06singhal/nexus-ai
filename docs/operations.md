@@ -65,9 +65,43 @@ See `disaster-recovery.md` for the full plan. Summary:
 |--------|-------|
 | **RPO** | Point-in-time (WAL) — requires managed Postgres with PITR |
 | **RTO** | Depends on restore method; local `pg_restore` ≈ minutes |
-| **Automated** | Not configured — deployment concern |
+| **Automated** | Hourly snapshot via `scripts/backup_postgres.sh` + cron (below) |
 
 Local dev: `docker compose down -v` wipes the `pgdata` volume.
+
+### Backup / restore scripts
+
+Both scripts auto-detect the postgres client — a host `pg_dump`/`pg_restore` if
+installed, otherwise they `docker exec` into the compose postgres container
+(which ships the tools) and copy artifacts out/in with `docker cp`. No postgres
+client install is required on the deploy host.
+
+```bash
+# Backup (defaults: localhost:5433, user/db nexus; retention 7 days)
+bash scripts/backup_postgres.sh [--dry-run]
+#  → ./backups/nexus_<timestamp>.dump ; old dumps > RETENTION_DAYS pruned
+
+# Inspect / validate a backup (no destructive action)
+bash scripts/restore_postgres.sh --list <backup.dump>
+bash scripts/restore_postgres.sh --dry-run <backup.dump>
+
+# Restore (⚠️ DROPS and recreates the target database!)
+bash scripts/restore_postgres.sh <backup.dump>      # latest: --latest
+```
+
+Common overrides (env): `POSTGRES_HOST/PORT/USER/DB`, `BACKUP_DIR`,
+`RETENTION_DAYS`, `DATABASE_URL`. Without password auth on a remote host,
+export `POSTGRES_PASSWORD` (never commit it).
+
+**RPO schedule (crond):** an an hourly dump bounds RPO without PITR at ≤ 1 h.
+
+```cron
+# every day at 02:17 ... or hourly:
+17 * * * *  cd /path/to/nexus-ai && bash scripts/backup_postgres.sh >> /var/log/nexus-backup.log 2>&1
+```
+
+**Verify every backup** by `--list`-ing it or restoring to a scratch DB — a
+backup that has never been restored is a hope, not a backup.
 
 ---
 
@@ -105,6 +139,27 @@ Docker Compose healthchecks use the unauthenticated `/ready` endpoint.
   `true` for inline tests
 - **Reliability**: `IDEMPOTENCY_ENABLED`, `DLQ_ENABLED`, heartbeat (`WORKER_HEARTBEAT_INTERVAL_SECONDS=5`), staleness (`WORKER_STALE_THRESHOLD_SECONDS=120`), retries (`WORKER_MAX_RETRIES=3`)
 
+### Two worker topologies (Item 6)
+
+Worker startup is shared between the API process and a headless entrypoint via
+`app/workers.py::start_workers()/stop_workers()`, so the same daemons run in
+either topology:
+
+1. **In-process (default, dev/CI)**: the FastAPI lifespan starts the daemon
+   threads when the `*_WORKER_ENABLED` flags are set. `run_production.sh` and
+   the single-container compose stack use this.
+2. **Split container (production)**: `docker-compose.prod.yml` runs a dedicated
+   `worker` service using `python -m app.main_worker` from the same API image.
+   The API container runs worker-free (`WORKFLOW_WORKER_ENABLED=false`) and
+   only serves requests; the worker owns the queues. Scale out with an extra
+   `docker compose up -d --scale worker=N` (claims are atomic). Set
+   `API_WORKERS_ENABLED=true` to fall back to the single-container topology.
+
+The headless worker refreshes a heartbeat file (`WORKER_HEARTBEAT_PATH`, set to
+`/tmp/nexus-worker.heartbeat` in the overlay) each poll; its compose healthcheck
+fails if the file goes stale, so a hung/dead worker is detected. `scripts/deploy.sh`
+waits for both API and worker to be healthy before completing.
+
 ---
 
 ## 8. Common Failures & Troubleshooting
@@ -133,7 +188,10 @@ Key env vars (see `.env.example` for full list):
 | Governance | `KILL_SWITCH_GLOBAL_PAUSE`, `APPROVAL_*`, `RESOURCE_MAX_*` |
 | Feature Flags | `FEATURE_FLAGS_ENABLED`, `FEATURE_*` |
 | Rate limiting | `RATE_LIMIT_ENABLED`, `RATE_LIMIT_BACKEND` (`memory` per-process, `redis` cross-process ZSET — degrades to memory on outage), `RATE_LIMIT_*_PER_MINUTE` |
-| Workers | `WORKFLOW_WORKER_ENABLED`, `ORCHESTRATION_WORKER_ENABLED`, `ORCHESTRATION_*` |
+| Workers | `WORKFLOW_WORKER_ENABLED`, `ORCHESTRATION_WORKER_ENABLED`, `ORCHESTRATION_*`, `WORKER_HEARTBEAT_PATH` (headless-worker heartbeat file), `API_WORKERS_ENABLED` (compose: in-API vs split) |
+| Governance | `KILL_SWITCH_GLOBAL_PAUSE`, `APPROVAL_*`, `RESOURCE_MAX_*`, `RESOURCE_LIMITS_PROVISION` (seed per-tenant limits at startup) |
+| Startup AI | `MODEL_PLANNERS_ENABLED` (mission analysis + strategy via real model when a key exists; else deterministic) |
+| Monitoring | `PROMETHEUS_RETENTION`, `GRAFANA_ADMIN_USER/PASSWORD`, `PROMETHEUS_PORT`, `GRAFANA_PORT` |
 | External | `EXTERNAL_*` (timeouts, caps, SSRF, connectors) |
 | Phase 12 | No dedicated env — governed by Phase 11 budgets |
 
@@ -269,10 +327,11 @@ The script:
    generates **ephemeral** ones and warns loudly — those invalidate sessions on
    the next restart, so real deployments set them from a secret manager
    (nothing is ever written to disk by the script).
-2. `docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api web`
-3. `docker compose ... up -d` — boots the prod overlay (below).
-4. Polls the API container healthcheck (30 × 5 s) and fails with a hint if it
-   never turns healthy.
+2. `docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api web worker`
+3. `docker compose ... up -d` — boots the prod overlay (below). With
+   `--tls`, `docker-compose.tls.yml` is layered on for the Caddy HTTPS edge.
+4. Polls the API container healthcheck and the worker heartbeat healthcheck
+   (30 × 5 s each) and fails with a hint if either never turns healthy.
 
 ### 11c. `docker-compose.prod.yml` — production overlay
 
@@ -281,20 +340,33 @@ Overlay on the base `docker-compose.yml`:
 - **Prebuilt images, no build**: `build: !reset null` clears the base `build:`
   keys and swaps in the pulled GHCR images (`NEXUS_IMAGE_REPO`/`IMAGE_TAG`
   template vars, both defaulting for a local `.env`).
+- **Split worker topology**: the `api` service serves requests worker-free
+  (worker flags default `false`, overridable with `API_WORKERS_ENABLED=true`),
+  and a dedicated `worker` service runs `python -m app.main_worker` with both
+  worker flags `true`, its own DB/Redis URLs, a heartbeat-file healthcheck, and
+  `AUTO_MIGRATE=false` (the API already applied migrations). See §7.
 - **Hardened chain on by default**: `AUTH_ENABLED=true`,
   `RATE_LIMIT_ENABLED=true`, `RATE_LIMIT_BACKEND=redis`,
-  `WORKFLOW_WORKER_ENABLED=true`, `ORCHESTRATION_WORKER_ENABLED=true`,
   `LOGGING_JSON=true`, `SECURE_AUTH_COOKIES=true`.
 - **Mandatory secrets**: `${JWT_SECRET_KEY:?}` / `${SECRET_ENCRYPTION_KEY:?}`
   make compose fail fast until real keys are exported.
-- **Optional model keys**: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` pass through;
-  leave unset for keyless deterministic mode.
+- **Optional model keys**: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` pass through
+  to both api and worker; leave unset for keyless deterministic mode.
 - **Pinned CORS** to the real frontend origin (`CORS_ORIGINS`), overriding the
   dev default.
 - Postgres/Redis URLs, ports, healthchecks and `depends_on` are **inherited
   unchanged** from the base file.
 
-### 11d. Managed deployment path (documented, not shipped)
+### 11d. TLS edge (Caddy)
+
+`docker-compose.tls.yml` layers a Caddy v2 reverse proxy (external `80`/`443`)
+in front of the stack — `/api/*`, `/docs`, `/redoc`, `/openapi.json` → api;
+everything else → web. Automatic HTTPS: public domains via Let's Encrypt, an
+internal self-signed CA for `localhost`. `SITE_ADDRESS` names the host; the
+overlay hardens cookies (`SECURE_AUTH_COOKIES`) and pins `CORS_ORIGINS` /
+`TRUSTED_HOSTS` to it. Enable with `bash scripts/deploy.sh --tls`.
+
+### 11e. Managed deployment path (documented, not shipped)
 
 For horizontal replication, TLS termination, managed Postgres with PITR and
 auto-failover, the documented targets are a PaaS in the Fly.io/render family or
@@ -306,11 +378,37 @@ runs inherit.
 
 ---
 
+## 11f. Monitoring & Alerting (Item 5)
+
+`docker-compose.monitoring.yml` layers Prometheus + Grafana over the stack:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+# Prometheus: http://localhost:9090   Grafana: http://localhost:3001
+# Grafana default login admin/admin — change immediately (GF_SECURITY_ADMIN_*).
+```
+
+- **Metrics** are exposed at `/api/v1/system/metrics/prometheus` in Prometheus
+  text exposition format (counters `*_total`, gauges, histograms
+  `*_milliseconds_count/_sum`). The path is auth-exempt so the scraper needs no
+  credentials; it carries process-level data only — no per-tenant rows.
+- **Prometheus** scrapes the API every 15 s (config:
+  `infrastructure/prometheus/prometheus.yml`), retention via
+  `PROMETHEUS_RETENTION` (default 15 d).
+- **Grafana** ships a prebuilt NEXUS dashboard (`infrastructure/grafana`,
+  provisioned datasource + file provider): request rate, error rate, avg
+  latency, queue depth, token usage, process uptime.
+- **Alerting**: wire Prometheus `alerting` rules to your Alertmanager/notification
+  channel — the natural first rules are `request_error_total` rate > 0 sustained
+  and `nexus_process_started_at` churn (unexpected restarts).
+
+---
+
 ## 12. Running Tests & Checks
 
 ```bash
 # Backend (from apps/api)
-.venv/bin/pytest -q                    # 1144 tests + 4 keyless/pgvector skips (skips resolved on a live Postgres)
+.venv/bin/pytest -q                    # 1182 tests + 3 keyless/pgvector skips (skips resolved on a live Postgres)
 .venv/bin/ruff check .                 # lint
 .venv/bin/ruff format --check .        # format
 

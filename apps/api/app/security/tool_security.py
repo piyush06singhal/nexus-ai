@@ -112,6 +112,7 @@ class ToolSandbox:
             tool_name=tool_name,
             timeout_seconds=max(timeout_seconds, budget.timeout_seconds),
             max_memory_mb=budget.max_memory_mb,
+            max_output_bytes=budget.max_output_bytes,
             allow_filesystem=budget.allow_filesystem,
             allow_network=budget.allow_network,
             allow_process=budget.allow_process,

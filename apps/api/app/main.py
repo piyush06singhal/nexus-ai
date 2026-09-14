@@ -25,39 +25,17 @@ async def lifespan(_app: FastAPI):
     """Startup/shutdown lifecycle.
 
     Configures logging and, when enabled, starts the workflow worker,
-    workflow scheduler, and orchestration worker daemon threads.
+    workflow scheduler, and orchestration worker daemon threads. Worker
+    startup is shared with the headless worker process (``app.main_worker``)
+    via :func:`app.workers.start_workers`, so an independently deployed
+    worker container consumes the queues instead of the API process.
     """
     setup_logging()
     logger.info("NEXUS API starting", extra={"env": settings.environment})
 
-    worker = None
-    scheduler = None
-    orchestration_worker = None
-    if settings.workflow_worker_enabled:
-        from app.db.session import SessionLocal
-        from app.workflow.scheduler import WorkflowScheduler
-        from app.workflow.worker import WorkflowWorker
+    from app.workers import start_workers, stop_workers
 
-        worker = WorkflowWorker(
-            SessionLocal,
-            poll_interval=settings.workflow_worker_poll_interval,
-        )
-        scheduler = WorkflowScheduler(
-            SessionLocal,
-            poll_interval=settings.workflow_scheduler_poll_interval,
-        )
-        worker.start()
-        scheduler.start()
-
-    if settings.orchestration_worker_enabled:
-        from app.db.session import SessionLocal
-        from app.orchestration.worker import OrchestrationWorker
-
-        orchestration_worker = OrchestrationWorker(
-            SessionLocal,
-            poll_interval=settings.workflow_worker_poll_interval,  # reuse poll interval
-        )
-        orchestration_worker.start()
+    worker_handles = start_workers()
 
     # Bootstrap admin: non-prod deployments with AUTH_DEV_BOOTSTRAP_* get a
     # usable login on first startup when no admin exists (no-op otherwise).
@@ -72,14 +50,34 @@ async def lifespan(_app: FastAPI):
         finally:
             session.close()
 
+    # Governance: seed per-tenant resource limits from the resource_max_* config
+    # defaults (global + one row per existing tenant). Flag-gated, idempotent —
+    # off by default so dev/test start unlimited. Standalone alternative:
+    # scripts/seed_resource_limits.py.
+    if settings.resource_limits_provision:
+        from sqlalchemy import select
+
+        from app.db.models.company import Company
+        from app.db.session import SessionLocal
+        from app.security.resources import ResourceGovernanceService
+
+        session = SessionLocal()
+        try:
+            company_ids = list(session.execute(select(Company.id)).scalars().all())
+            ResourceGovernanceService(session).provision_default_limits(company_ids=company_ids)
+            session.commit()
+            logger.info(
+                "resource_limits_provisioned",
+                extra={"companies": len(company_ids), "env": settings.environment},
+            )
+        except Exception:  # noqa: BLE001 — provisioning must not take the API down
+            logger.exception("resource_limits_provision_failed")
+        finally:
+            session.close()
+
     yield
 
-    if worker is not None:
-        worker.stop()
-    if scheduler is not None:
-        scheduler.stop()
-    if orchestration_worker is not None:
-        orchestration_worker.stop()
+    stop_workers(worker_handles)
     logger.info("NEXUS API shutting down")
 
 

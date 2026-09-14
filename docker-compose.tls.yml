@@ -1,0 +1,62 @@
+# NEXUS TLS reverse-proxy overlay.
+#
+# Adds a Caddy edge that terminates TLS in front of the API and web, so the
+# public surface is a single HTTPS endpoint (automatic Let's Encrypt certs for
+# a public domain, internal-CA self-signed for localhost).
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                    -f docker-compose.tls.yml up -d
+#
+# or with deploy.sh:
+#     bash scripts/deploy.sh --tls [TAG]
+#
+# Set SITE_ADDRESS to the public domain (default localhost). When this overlay
+# is active, api/web stop publishing host ports — every request enters through
+# the proxy on :80/:443 (Caddy redirects HTTP → HTTPS automatically).
+
+services:
+  api:
+    # Remove the base host port mapping: behind Caddy, the API must only be
+    # reachable on the compose network. (!reset null deletes the key — the same
+    # mechanism docker-compose.prod.yml uses to drop the "build:".)
+    ports: !reset null
+    environment:
+      # CORS pinned to the public origin as seen by browsers (https, not the
+      # internal http://web:3000). SITE_ADDRESS default keeps localhost usable.
+      CORS_ORIGINS: '["https://${SITE_ADDRESS:-localhost}"]'
+      # The allow-list mirrors the Host header Caddy forwards. Without this
+      # the production-readiness gate would warn on an unknown host.
+      TRUSTED_HOSTS: '["${SITE_ADDRESS:-localhost}"]'
+      # Auth cookies must only be sent over HTTPS now that TLS terminates at
+      # the edge (the prod overlay already defaults this true).
+      SECURE_AUTH_COOKIES: "true"
+
+  web:
+    # No host port either — the browser talks to Caddy only.
+    ports: !reset null
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # A public domain → automatic Let's Encrypt; localhost → internal CA
+      # (self-signed). This drives the {$SITE_ADDRESS} placeholder in the
+      # Caddyfile, and therefore CORS/TRUSTED_HOSTS above too.
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates, ACME state and config must survive restarts/redeploys.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

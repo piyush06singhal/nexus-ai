@@ -75,6 +75,14 @@ class Settings(BaseSettings):
     anthropic_max_retries: int = 2
     anthropic_retry_backoff_seconds: float = 1.0
 
+    # Startup analyzers/planners (Item 8): when true AND a real provider key is
+    # present, mission analysis + strategic planning route through the
+    # model-backed implementations (ModelMissionAnalyzer / ModelStrategicPlanner,
+    # protocol-level structured output); otherwise they degrade to the
+    # deterministic rule-based pipeline. Default off keeps the offline/demo
+    # path byte-identical.
+    model_planners_enabled: bool = False
+
     # Memory system (Phase 4)
     memory_embedding_provider: str | None = None  # "openai" to enable embeddings, else None
     memory_embedding_model: str = "text-embedding-3-small"
@@ -98,6 +106,11 @@ class Settings(BaseSettings):
     orchestration_execute_sync: bool = False  # True in tests: execute runs inline
     orchestration_default_strategy: str = "deterministic"
     orchestration_max_agents: int = 20
+
+    # Headless worker (Item 6 — worker topology): when set, the idle loop in
+    # app/main_worker.py refreshes this file's mtime each poll so a container
+    # healthcheck (or an external supervisor) can verify the worker is alive.
+    worker_heartbeat_path: str = ""
     orchestration_max_tasks: int = 50
     orchestration_max_parallel_agents: int = 5
     orchestration_max_parallel_tasks: int = 5
@@ -243,6 +256,11 @@ class Settings(BaseSettings):
     resource_max_tokens_default: int = 500_000
     resource_max_cost_default: float = 500.0
     resource_max_tool_calls_default: int = 500
+    # Populate resource_limit rows at startup from the resource_max_* ceilings
+    # above (global + one row per existing tenant). Idempotent; companies can
+    # still lower their own limits via the governance API afterwards. Off by
+    # default so tests/dev start unlimited — enable for real deployments.
+    resource_limits_provision: bool = False
     # Per-category budget ceilings (USD) defaults; companies may lower them.
     resource_default_budget_keys: list[str] = Field(
         default_factory=lambda: [

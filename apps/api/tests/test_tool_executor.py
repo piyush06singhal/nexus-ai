@@ -155,3 +155,29 @@ class TestToolExecutor:
             iteration=3,
         )
         assert record.iteration == 3
+
+    def test_max_output_bytes_enforced(self, monkeypatch):
+        """max_output_bytes is enforced in-process: oversized tool data is
+        discarded and the result is marked DENIED."""
+        from app.security import tool_security
+        from app.security.tool_security import ToolSandbox, ToolSecurityPolicy
+
+        monkeypatch.setitem(
+            tool_security._SANDBOX_TEMPLATES,
+            "tiny",
+            ToolSandbox(tool_name="*", timeout_seconds=30.0, max_output_bytes=10),
+        )
+        policy = ToolSecurityPolicy(default_sandbox="tiny")
+        executor = ToolExecutor(self.db, tool_policy=policy)
+        ctx = self._make_ctx()
+        record = executor.execute(
+            tool_name="calculator",
+            arguments={"expression": "2 + 2"},
+            execution_id=uuid4(),
+            agent_id=uuid4(),
+            permission_context=ctx,
+        )
+        # The JSON output of {"result": 4.0} is ~15 bytes, exceeding the limit.
+        assert record.result.status == ToolResultStatus.DENIED
+        assert "exceeded the sandbox limit" in record.result.error
+        assert record.result.data is None

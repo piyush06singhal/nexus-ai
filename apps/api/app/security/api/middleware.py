@@ -27,6 +27,13 @@ def _requires_token(path: str) -> bool:
         return False
     if path in _public_auth_paths():
         return False
+    # Prometheus scrape endpoint: process-level metrics only (request counts,
+    # latencies, queue depth — no tenant data). Intentionally token-free so a
+    # scraper on the internal network can collect it; keep the API port
+    # un-published in production (the TLS overlay collapses the surface to
+    # the Caddy edge). See docs/operations.md §Monitoring.
+    if path == f"{prefix}/system/metrics/prometheus":
+        return False
     return True
 
 

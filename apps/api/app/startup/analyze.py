@@ -21,8 +21,11 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app.ai.interfaces import ModelProvider
+from app.core.logging import get_logger
 from app.db.models.startup import Mission
 from app.startup.types import MissionAnalysisResult
+
+logger = get_logger(__name__)
 
 _BUILD_VERBS = ("build", "create", "develop", "launch", "design", "ship", "make")
 
@@ -239,9 +242,29 @@ class ModelMissionAnalyzer:
         )
 
 
+def resolve_mission_analyzer(db: Session | None) -> MissionAnalyzer:
+    """Select the analyzer implementation from settings.
+
+    Uses :class:`ModelMissionAnalyzer` only when
+    ``settings.model_planners_enabled`` is set AND a real provider key is
+    configured — otherwise the deterministic (rule-based) analyzer, so the
+    offline/demo pipeline never changes by default.
+    """
+    from app.core.config import settings
+    from app.startup.strategy import _real_provider
+
+    if settings.model_planners_enabled:
+        provider = _real_provider()
+        if provider is not None:
+            logger.info("model_mission_analyzer_selected")
+            return ModelMissionAnalyzer(db, provider)
+        logger.info("model_mission_analyzer_fallback_deterministic")
+    return DeterministicMissionAnalyzer(db)
+
+
 def run_analysis(db: Session, mission: Mission) -> MissionAnalysisResult:
-    """Run the default (deterministic) analysis and persist it."""
-    result = DeterministicMissionAnalyzer(db).analyze(mission)
+    """Run analysis (model-backed when enabled, else deterministic) and persist."""
+    result = resolve_mission_analyzer(db).analyze(mission)
     mission.analysis = __import__("json").dumps(result.to_dict(), default=str)
     db.commit()
     return result

@@ -14,8 +14,11 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app.ai.interfaces import ModelProvider
+from app.core.logging import get_logger
 from app.db.models.startup import Mission
 from app.startup.types import MissionAnalysisResult, StrategyPlanData
+
+logger = get_logger(__name__)
 
 
 class StrategicPlanner(Protocol):
@@ -176,3 +179,40 @@ class ModelStrategicPlanner:
             resource_estimates=dict(result.resource_estimates),
             success_metrics=list(result.success_metrics),
         )
+
+
+def _real_provider() -> ModelProvider | None:
+    """Return a real provider instance when an API key is configured.
+
+    Prefers OpenAI, then Anthropic (same order as the runtime resolver).
+    Providers are cheap to construct and make no network call until a
+    request, so probing them here is side-effect free.
+    """
+    from app.ai.providers.anthropic_provider import AnthropicProvider
+    from app.ai.providers.openai_provider import OpenAIProvider
+
+    for factory in (OpenAIProvider, AnthropicProvider):
+        candidate = factory()
+        api_key = getattr(candidate, "api_key", None)
+        if api_key and not getattr(candidate, "stub_enabled", False):
+            return candidate
+    return None
+
+
+def resolve_strategic_planner(db: Session | None) -> StrategicPlanner:
+    """Select the strategic-planner implementation from settings.
+
+    Uses :class:`ModelStrategicPlanner` only when
+    ``settings.model_planners_enabled`` is set AND a real provider key is
+    configured — otherwise the deterministic (rule-based) planner, so the
+    offline/demo pipeline never changes by default.
+    """
+    from app.core.config import settings
+
+    if settings.model_planners_enabled:
+        provider = _real_provider()
+        if provider is not None:
+            logger.info("model_strategic_planner_selected")
+            return ModelStrategicPlanner(db, provider)
+        logger.info("model_strategic_planner_fallback_deterministic")
+    return DeterministicStrategicPlanner(db)

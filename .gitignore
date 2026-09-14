@@ -52,3 +52,7 @@ coverage/
 *.pem
 *.key
 *.cert
+
+# Database backups (never commit production data)
+/backups/
+*.dump

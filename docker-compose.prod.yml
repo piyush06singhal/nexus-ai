@@ -9,6 +9,13 @@
 #
 #     bash scripts/deploy.sh [TAG]        # TAG defaults to "latest"
 #
+# Split-container worker topology (Item 6): the API serves requests
+# worker-free; a dedicated ``worker`` service runs the headless entrypoint
+# (``python -m app.main_worker``) and owns the workflow/orchestration queues.
+# This scales out cleanly (a second `worker` replica competes on the same
+# atomic claims) — flip ``API_WORKERS_ENABLED=true`` to fall back to the
+# single-container threaded topology.
+#
 # Secret policy: nothing is hardcoded. Secrets and keys are read from the
 # host environment (real deployments use a secret manager): compose REQUIRES
 # JWT_SECRET_KEY and SECRET_ENCRYPTION_KEY and fails fast if either is unset.
@@ -25,8 +32,11 @@ services:
       AUTH_ENABLED: "true"
       RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_BACKEND: "redis"
-      WORKFLOW_WORKER_ENABLED: "true"
-      ORCHESTRATION_WORKER_ENABLED: "true"
+      # Request-serving only: queues are consumed by the separate `worker`
+      # service (split topology). Set API_WORKERS_ENABLED=true to keep the
+      # in-process threaded workers instead.
+      WORKFLOW_WORKER_ENABLED: "${API_WORKERS_ENABLED:-false}"
+      ORCHESTRATION_WORKER_ENABLED: "${API_WORKERS_ENABLED:-false}"
       LOGGING_JSON: "true"
       SECURE_AUTH_COOKIES: ${SECURE_AUTH_COOKIES:-true}
       # Mandatory secrets — compose errors until these are provided.
@@ -39,6 +49,41 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # (Postgres/Redis URLs, ports, healthchecks and depends_on are inherited
       # from the base docker-compose.yml.)
+
+  # Headless queue consumer — same image as the API, different command. The
+  # API already applied migrations (worker depends on api being healthy), so
+  # AUTO_MIGRATE=false here just execs main_worker. DB/Redis URLs are spelled
+  # out because the worker is a new compose service (no inheritance).
+  worker:
+    image: ${NEXUS_IMAGE_REPO:-piyush06singhal/nexus-ai}/nexus-api:${IMAGE_TAG:-latest}
+    command: ["python", "-m", "app.main_worker"]
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_dev}@postgres:5432/${POSTGRES_DB:-nexus}
+      REDIS_URL: redis://redis:6379/0
+      AUTO_MIGRATE: "false"
+      WORKFLOW_WORKER_ENABLED: "true"
+      ORCHESTRATION_WORKER_ENABLED: "true"
+      LOGGING_JSON: "true"
+      # Heartbeat file: the idle loop touches this each poll; the healthcheck
+      # below fails if it goes stale (worker hung or dead).
+      WORKER_HEARTBEAT_PATH: /tmp/nexus-worker.heartbeat
+      # Mandatory secrets — shared with the API task.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required for production}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required for production}
+      # Optional real-model keys — leave unset for keyless deterministic mode.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; p='/tmp/nexus-worker.heartbeat'; sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p)<10 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
   web:
     build: !reset null

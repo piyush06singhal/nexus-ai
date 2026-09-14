@@ -79,6 +79,54 @@ class ResourceGovernanceService:
             self.db.flush()
         return limit
 
+    def provision_default_limits(
+        self,
+        *,
+        company_ids: list[UUID] | None = None,
+        scope: str = ResourceLimitScope.GLOBAL.value,
+        set_by: UUID | None = None,
+    ) -> list[ResourceLimit]:
+        """Seed `ResourceLimit` rows from the ``resource_max_*`` config defaults.
+
+        Turns the tunable defaults into real governance rows: one entry per core
+        category at ``scope`` (global by default) and, when ``company_ids`` is
+        given, one per-tenant entry per company. Idempotent — re-running updates
+        existing rows via :meth:`set_limit` instead of duplicating them.
+
+        Gated by the ``RESOURCE_LIMITS_PROVISION`` flag at startup (see the app
+        lifespan) or by running ``scripts/seed_resource_limits.py`` standalone.
+        """
+        defaults = {
+            ResourceCategory.TOKENS.value: settings.resource_max_tokens_default,
+            ResourceCategory.COST.value: settings.resource_max_cost_default,
+            ResourceCategory.TOOL_CALLS.value: settings.resource_max_tool_calls_default,
+            ResourceCategory.ITERATIONS.value: settings.resource_max_iterations_default,
+            ResourceCategory.DURATION_SECONDS.value: settings.resource_max_duration_seconds_default,
+        }
+        created: list[ResourceLimit] = []
+        for category, limit_value in defaults.items():
+            created.append(
+                self.set_limit(
+                    category=category,
+                    limit_value=float(limit_value),
+                    scope=scope,
+                    period="per_day",
+                    set_by=set_by,
+                )
+            )
+            for company_id in company_ids or []:
+                created.append(
+                    self.set_limit(
+                        category=category,
+                        limit_value=float(limit_value),
+                        scope=ResourceLimitScope.COMPANY.value,
+                        company_id=company_id,
+                        period="per_day",
+                        set_by=set_by,
+                    )
+                )
+        return created
+
     def effective_limit(
         self, category: str, *, company_id: UUID | None = None, period: str | None = "per_day"
     ) -> float | None:

@@ -129,6 +129,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Item 7 — deploy CI verification: every overlay the deploy path uses
+      # must resolve (structure + interpolation) before code is merged, so a
+      # broken prod/tls/monitoring file can never reach scripts/deploy.sh.
+      # Secrets are required-interpolation (JWT_SECRET_KEY/SECRET_ENCRYPTION_KEY);
+      # we supply throwaway values purely so `config` can expand them — compose
+      # never sees them again. The worker split-topology env is asserted too.
+      - name: Validate compose overlays (deploy path)
+        env:
+          JWT_SECRET_KEY: ci_validation_only
+          SECRET_ENCRYPTION_KEY: ci_validation_only
+          NEXUS_IMAGE_REPO: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tls.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config --quiet
+          # Split worker topology: API request-serving only, worker owns queues.
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --format json \
+            | jq -e '
+              .services.api.environment.WORKFLOW_WORKER_ENABLED   == "false"
+              and .services.api.environment.ORCHESTRATION_WORKER_ENABLED == "false"
+              and .services.worker.environment.WORKFLOW_WORKER_ENABLED == "true"
+              and .services.worker.environment.ORCHESTRATION_WORKER_ENABLED == "true"
+              and (.services.worker.command | index("app.main_worker") != null)
+              and .services.worker.environment.WORKER_HEARTBEAT_PATH != null
+            ' > /dev/null
+
       - name: Build API image
         run: docker build -f infrastructure/docker/Dockerfile.api -t nexus-api .
 
